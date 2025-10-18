@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package app;
+
+service AppService {
+  rpc login(LoginRequest) returns (LoginResponse);
+  rpc post(PostRequest) returns (PostResponse); // changed
+  rpc get(GetRequest) returns (GetResponse);
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string status = 1;
+  string token = 2;
+}
+
+message PostRequest {
+  string token = 1;
+  string type = 2;
+  string data = 3;
+}
+
+message PostResponse {
+  string status = 1;
+  string result = 2; // new: AI or other operation result
+}
+
+message GetRequest {
+  string token = 1;
+  string type = 2;
+  string params = 3;
+}
+
+message GetResponse {
+  string status = 1;
+  repeated string items = 2;
+}
