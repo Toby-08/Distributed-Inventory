@@ -1,5 +1,5 @@
 import jwt
-import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 SECRET_KEY = "your-secret-key-change-in-production"  # TODO: Move to environment variable
@@ -8,10 +8,10 @@ TOKEN_EXPIRY_HOURS = 1
 
 def generate_token(username: str) -> str:
     """Generate JWT token for authenticated user"""
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.now(timezone.utc)
     payload = {
         "username": username,
-        "exp": now + datetime.timedelta(hours=TOKEN_EXPIRY_HOURS),
+        "exp": now + timedelta(hours=TOKEN_EXPIRY_HOURS),
         "iat": now
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
