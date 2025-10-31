@@ -4,7 +4,7 @@ package app;
 
 service AppService {
   rpc login(LoginRequest) returns (LoginResponse);
-  rpc post(PostRequest) returns (PostResponse); // changed
+  rpc post(PostRequest) returns (PostResponse);
   rpc get(GetRequest) returns (GetResponse);
 }
 
@@ -20,13 +20,13 @@ message LoginResponse {
 
 message PostRequest {
   string token = 1;
-  string type = 2;
+  string type = 2;  // "add_inventory", "update_inventory", "query_ai"
   string data = 3;
 }
 
 message PostResponse {
   string status = 1;
-  string result = 2; // new: AI or other operation result
+  string result = 2;
 }
 
 message GetRequest {
