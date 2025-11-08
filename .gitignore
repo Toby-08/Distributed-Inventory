@@ -6,3 +6,9 @@ __pycache__/
 .DS_Store
 .idea/
 .env/
+
+#Logs
+*.log
+*.jsonl
+operation_log.jsonl
+llm_context_log.jsonl

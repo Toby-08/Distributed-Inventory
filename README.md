@@ -40,6 +40,8 @@ pip install -r requirements.txt
   - Run with python -m to preserve package imports
 - Minimal dependencies
   - grpcio, grpcio-tools, protobuf, PyJWT
+- Git hygiene
+  - .gitignore excludes logs (*.jsonl), __pycache__, venv
 
 ## ▶️ Run
 
