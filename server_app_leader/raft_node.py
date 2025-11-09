@@ -101,7 +101,7 @@ class RaftNode:
             self.current_term = int(data.get("current_term", 0))
             self.voted_for = data.get("voted_for")
         except Exception as e:
-            print(f"[{self.node_id}] ⚠️ Failed to load state: {e}")
+            print(f"[{self.node_id}]  Failed to load state: {e}")
 
     def _persist_state(self):
         """Persist current_term and voted_for."""
@@ -114,7 +114,7 @@ class RaftNode:
                 }, f)
             os.replace(tmp_path, self.state_path)
         except Exception as e:
-            print(f"[{self.node_id}] ⚠️ Failed to persist state: {e}")
+            print(f"[{self.node_id}]  Failed to persist state: {e}")
 
     def _load_log(self):
         """Load log entries from raft_log.jsonl."""
@@ -131,14 +131,14 @@ class RaftNode:
                         continue
                     try:
                         entry = json.loads(line)
-                        # Ensure mandatory fields
+                     
                         if "term" in entry and "index" in entry:
                             self.log.append(entry)
                             # Reconstruct inventory by applying
                             self._apply_loaded(entry)
                             loaded_count += 1
                     except json.JSONDecodeError as e:
-                        print(f"[{self.node_id}] ⚠️ Skipping malformed log line: {e}")
+                        print(f"[{self.node_id}]  Skipping malformed log line: {e}")
                         continue
             
             # Rebuild commit pointers
@@ -148,7 +148,7 @@ class RaftNode:
             print(f"[{self.node_id}] Successfully loaded {loaded_count} log entries from {self.log_path}")
             
         except Exception as e:
-            print(f"[{self.node_id}] ⚠️ Failed to load log: {e}")
+            print(f"[{self.node_id}]  Failed to load log: {e}")
             import traceback
             traceback.print_exc()
 
@@ -170,21 +170,21 @@ class RaftNode:
                 f.flush()
                 os.fsync(f.fileno())
         except Exception as e:
-            print(f"[{self.node_id}] ⚠️ Failed to persist log entry: {e}")
+            print(f"[{self.node_id}]  Failed to persist log entry: {e}")
 
     # 🆕 Health tracking methods
     def _mark_peer_dead(self, peer: str):
         """Mark a peer as dead"""
         with self.state_lock:
             if peer not in self.dead_peers:
-                print(f"[{self.node_id}] ⚠️  Marking {peer} as DEAD (unreachable)")
+                print(f"[{self.node_id}]   Marking {peer} as DEAD (unreachable)")
                 self.dead_peers.add(peer)
     
     def _mark_peer_alive(self, peer: str):
         """Mark a peer as alive again"""
         with self.state_lock:
             if peer in self.dead_peers:
-                print(f"[{self.node_id}] ✅ {peer} is BACK ONLINE")
+                print(f"[{self.node_id}]  {peer} is BACK ONLINE")
                 self.dead_peers.remove(peer)
             self.peer_last_seen[peer] = time.time()
     
@@ -244,11 +244,11 @@ class RaftNode:
                 if self.state != NodeState.LEADER:
                     return
                 if not self._check_llm_health():
-                    print(f"[{self.node_id}] ℹ️  LLM unavailable - will auto-sync later")
+                    print(f"[{self.node_id}]  LLM unavailable - will auto-sync later")
                     return
                 self._bulk_sync_llm_if_needed()
             except Exception as e:
-                print(f"[{self.node_id}] ⚠️  LLM sync failed (non-critical): {e}")
+                print(f"[{self.node_id}]   LLM sync failed (non-critical): {e}")
 
         threading.Thread(target=sync_with_llm, daemon=True).start()
         self._send_heartbeats()
@@ -257,15 +257,15 @@ class RaftNode:
         """Leader-only bulk sync with dedupe."""
         with self.state_lock:
             if self.state != NodeState.LEADER:
-                print(f"[{self.node_id}] ⚠️ Not leader, skipping sync")
+                print(f"[{self.node_id}]  Not leader, skipping sync")
                 return
             current_index = len(self.log)
             if (self.last_llm_synced_term, self.last_llm_synced_index) == (self.current_term, current_index):
-                print(f"[{self.node_id}] ℹ️  Already synced term={self.current_term} index={current_index}")
+                print(f"[{self.node_id}]  Already synced term={self.current_term} index={current_index}")
                 return
         
         # Proceed outside the lock
-        print(f"[{self.node_id}] 🔄 LLM bulk sync: term={self.current_term} logs={current_index}")
+        print(f"[{self.node_id}] LLM bulk sync: term={self.current_term} logs={current_index}")
         ok = self._sync_logs_to_llm()
         if ok:
             with self.state_lock:
@@ -274,10 +274,10 @@ class RaftNode:
 
     def _sync_logs_to_llm(self) -> bool:
         """Bulk sync all logs to LLM server. Returns True if successful."""
-        print(f"[{self.node_id}] 🔍 _sync_logs_to_llm called with {len(self.log)} logs")
+        print(f"[{self.node_id}] _sync_logs_to_llm called with {len(self.log)} logs")
         
         try:
-            print(f"[{self.node_id}] 📡 Connecting to LLM at {self.llm_server_address}...")
+            print(f"[{self.node_id}] Connecting to LLM at {self.llm_server_address}...")
             
             channel = grpc.insecure_channel(
                 self.llm_server_address,
@@ -287,9 +287,9 @@ class RaftNode:
             # Test connection first
             try:
                 grpc.channel_ready_future(channel).result(timeout=2.0)
-                print(f"[{self.node_id}] ✅ LLM connection established")
+                print(f"[{self.node_id}]  LLM connection established")
             except grpc.FutureTimeoutError:
-                print(f"[{self.node_id}] ⚠️  LLM server unreachable (timeout)")
+                print(f"[{self.node_id}]   LLM server unreachable (timeout)")
                 channel.close()
                 return False
             
@@ -310,7 +310,7 @@ class RaftNode:
                     request_id=entry.get('request_id', '')
                 ))
             
-            print(f"[{self.node_id}] 📤 Sending {len(log_entries)} logs to LLM...")
+            print(f"[{self.node_id}] Sending {len(log_entries)} logs to LLM...")
             
             # Call SyncLogs RPC
             response = stub.SyncLogs(llm_pb2.SyncLogsRequest(
@@ -322,19 +322,19 @@ class RaftNode:
             channel.close()
             
             if response.success:
-                print(f"[{self.node_id}] ✅ LLM acknowledged {response.logs_synced} logs: {response.message}")
+                print(f"[{self.node_id}]  LLM acknowledged {response.logs_synced} logs: {response.message}")
                 return True
             else:
-                print(f"[{self.node_id}] ⚠️  LLM sync failed: {response.message}")
+                print(f"[{self.node_id}]   LLM sync failed: {response.message}")
                 return False
                 
         except grpc.RpcError as e:
-            print(f"[{self.node_id}] ❌ LLM RPC error: {e.code()} - {e.details()}")
+            print(f"[{self.node_id}] LLM RPC error: {e.code()} - {e.details()}")
             import traceback
             traceback.print_exc()
             return False
         except Exception as e:
-            print(f"[{self.node_id}] ❌ LLM sync exception: {type(e).__name__}: {e}")
+            print(f"[{self.node_id}] LLM sync exception: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -351,7 +351,7 @@ class RaftNode:
             self._bulk_sync_llm_if_needed()
             
         except Exception as e:
-            print(f"[{self.node_id}] ⚠️  LLM re-sync failed: {e}")
+            print(f"[{self.node_id}]   LLM re-sync failed: {e}")
             import traceback
             traceback.print_exc()
 
@@ -384,7 +384,7 @@ class RaftNode:
             ), timeout=1.0)
             
             channel.close()
-            print(f"[{self.node_id}] 📤 LLM received log {entry['index']}")
+            print(f"[{self.node_id}] LLM received log {entry['index']}")
             
         except Exception:
             # Silent failure; health checker will adjust availability
@@ -437,7 +437,7 @@ class RaftNode:
 
     def _start_election(self):
         """Start a new election"""
-        print(f"[{self.node_id}] 🗳️  STARTING ELECTION")
+        print(f"[{self.node_id}]  STARTING ELECTION")
         with self.state_lock:
             self.state = NodeState.CANDIDATE
             self.current_term += 1
@@ -451,21 +451,21 @@ class RaftNode:
 
         votes = 1
         for peer in peers:
-            print(f"[{self.node_id}] 📞 Requesting vote from {peer}...")
+            print(f"[{self.node_id}] Requesting vote from {peer}...")
             if self._request_vote(peer, current_term):
                 votes += 1
-                print(f"[{self.node_id}] ✅ Received vote from {peer} ({votes}/{majority_needed})")
+                print(f"[{self.node_id}]  Received vote from {peer} ({votes}/{majority_needed})")
             else:
-                print(f"[{self.node_id}] ❌ Did NOT receive vote from {peer}")
+                print(f"[{self.node_id}] Did NOT receive vote from {peer}")
 
         with self.state_lock:
-            print(f"[{self.node_id}] 📊 Final vote count: {votes}/{majority_needed}")
+            print(f"[{self.node_id}] Final vote count: {votes}/{majority_needed}")
             if self.state == NodeState.CANDIDATE and votes >= majority_needed:
-                print(f"[{self.node_id}] 🎉 WON ELECTION!")
+                print(f"[{self.node_id}] WON ELECTION!")
                 self.failed_elections = 0
                 self._become_leader()
             else:
-                print(f"[{self.node_id}] 😞 Lost election")
+                print(f"[{self.node_id}] Lost election")
                 self.failed_elections = min(self.failed_elections + 1, 10)
                 # Exponential-ish backoff to avoid term churn
                 self.election_timeout = self._random_election_timeout() * (1.5 + 0.5 * self.failed_elections)
@@ -473,7 +473,7 @@ class RaftNode:
     def _request_vote(self, peer: str, term: int) -> bool:
         """Request vote from a peer"""
         try:
-            print(f"[{self.node_id}] 📞 Connecting to {peer}...")
+            print(f"[{self.node_id}] Connecting to {peer}...")
             channel = grpc.insecure_channel(peer)
             stub = raft_pb2_grpc.RaftServiceStub(channel)
             
@@ -481,7 +481,7 @@ class RaftNode:
                 last_log_index = len(self.log)
                 last_log_term = self.log[-1]['term'] if self.log else 0
             
-            print(f"[{self.node_id}] 📤 Sending vote request to {peer}...")
+            print(f"[{self.node_id}] Sending vote request to {peer}...")
             request = raft_pb2.VoteRequest(
                 term=term,
                 candidateId=self.node_id,
@@ -490,7 +490,7 @@ class RaftNode:
             )
             
             response = stub.RequestVote(request, timeout=1.0)
-            print(f"[{self.node_id}] 📥 Got response from {peer}: voteGranted={response.voteGranted}")
+            print(f"[{self.node_id}] Got response from {peer}: voteGranted={response.voteGranted}")
             
             # Mark peer alive on successful response
             self._mark_peer_alive(peer)
@@ -504,7 +504,7 @@ class RaftNode:
             return response.voteGranted
         
         except grpc.RpcError as e:
-            print(f"[{self.node_id}] ❌ RPC Error from {peer}: {e.code()} - {e.details()}")
+            print(f"[{self.node_id}] RPC Error from {peer}: {e.code()} - {e.details()}")
             # Mark dead if beyond threshold
             with self.state_lock:
                 last_seen = self.peer_last_seen.get(peer, time.time())
@@ -512,7 +512,7 @@ class RaftNode:
                     self._mark_peer_dead(peer)
             return False
         except Exception as e:
-            print(f"[{self.node_id}] ❌ Exception requesting vote from {peer}: {type(e).__name__}: {e}")
+            print(f"[{self.node_id}] Exception requesting vote from {peer}: {type(e).__name__}: {e}")
             return False
     
 
@@ -520,15 +520,15 @@ class RaftNode:
         """Leader-only bulk sync with dedupe."""
         with self.state_lock:
             if self.state != NodeState.LEADER:
-                print(f"[{self.node_id}] ⚠️ Not leader, skipping sync")
+                print(f"[{self.node_id}]  Not leader, skipping sync")
                 return
             current_index = len(self.log)
             if (self.last_llm_synced_term, self.last_llm_synced_index) == (self.current_term, current_index):
-                print(f"[{self.node_id}] ℹ️  Already synced term={self.current_term} index={current_index}")
+                print(f"[{self.node_id}]  Already synced term={self.current_term} index={current_index}")
                 return
         
         # Proceed outside the lock
-        print(f"[{self.node_id}] 🔄 LLM bulk sync: term={self.current_term} logs={current_index}")
+        print(f"[{self.node_id}] LLM bulk sync: term={self.current_term} logs={current_index}")
         ok = self._sync_logs_to_llm()
         if ok:
             with self.state_lock:
@@ -543,7 +543,7 @@ class RaftNode:
                 return
             self._bulk_sync_llm_if_needed()
         except Exception as e:
-            print(f"[{self.node_id}] ⚠️  LLM re-sync failed: {e}")
+            print(f"[{self.node_id}]   LLM re-sync failed: {e}")
 
     def _check_llm_health_direct(self) -> bool:
         """Direct LLM health check without caching"""
@@ -606,7 +606,7 @@ class RaftNode:
                 leader_id=self.node_id
             ), timeout=1.0)
             channel.close()
-            print(f"[{self.node_id}] 📤 LLM append log {entry['index']}")
+            print(f"[{self.node_id}] LLM append log {entry['index']}")
         except:
             # Silent failure; health checker will adjust availability
             self.llm_available = False
@@ -685,12 +685,12 @@ class RaftNode:
                     
                     # ⭐ Log every 70th heartbeat (~7 seconds at 100ms interval)
                     if self._heartbeat_send_count % 70 == 1:
-                        print(f"[{self.node_id}] 💓 Sending heartbeats (count={self._heartbeat_send_count})...")
+                        print(f"[{self.node_id}] Sending heartbeats (count={self._heartbeat_send_count})...")
                     
                     self._send_heartbeats()
                     
             except Exception as e:
-                print(f"[{self.node_id}] ⚠️ Heartbeat loop error: {e}")
+                print(f"[{self.node_id}]  Heartbeat loop error: {e}")
                 import traceback
                 traceback.print_exc()
 
@@ -754,10 +754,10 @@ class RaftNode:
             self._heartbeat_errors[peer] += 1
             
             if self._heartbeat_errors[peer] <= 3:
-                print(f"[{self.node_id}] ❌ Heartbeat to {peer} failed: {e.code()}")
+                print(f"[{self.node_id}] Heartbeat to {peer} failed: {e.code()}")
                 
         except Exception as e:
-            print(f"[{self.node_id}] ❌ Heartbeat exception to {peer}: {e}")
+            print(f"[{self.node_id}] Heartbeat exception to {peer}: {e}")
 
     def _llm_health_monitor(self):
         """Background thread to monitor LLM server availability"""
@@ -787,12 +787,12 @@ class RaftNode:
                 
                 # LLM came back online - trigger sync
                 if not was_available and now_available:
-                    print(f"[{self.node_id}] ✅ LLM server RECOVERED! Syncing logs...")
+                    print(f"[{self.node_id}] LLM server RECOVERED! Syncing logs...")
                     threading.Thread(target=self._resync_llm_on_recovery, daemon=True).start()
                 
                 # LLM went offline
                 elif was_available and not now_available:
-                    print(f"[{self.node_id}] ⚠️  LLM server became UNAVAILABLE")
+                    print(f"[{self.node_id}]   LLM server became UNAVAILABLE")
                 
             except Exception as e:
-                print(f"[{self.node_id}] ⚠️  LLM health monitor error: {e}")
+                print(f"[{self.node_id}]   LLM health monitor error: {e}")

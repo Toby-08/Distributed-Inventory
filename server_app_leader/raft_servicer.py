@@ -13,11 +13,11 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
         node = self.node
         
         with node.state_lock:
-            print(f"[{node.node_id}] 📨 Received vote request from {request.candidateId} for term {request.term}")
+            print(f"[{node.node_id}] Received vote request from {request.candidateId} for term {request.term}")
             
             # Reject if term < currentTerm
             if request.term < node.current_term:
-                print(f"[{node.node_id}] ❌ Rejected vote for {request.candidateId} (old term {request.term} < {node.current_term})")
+                print(f"[{node.node_id}] Rejected vote for {request.candidateId} (old term {request.term} < {node.current_term})")
                 return raft_pb2.VoteResponse(term=node.current_term, voteGranted=False)
             
             # Update term if higher
@@ -44,11 +44,11 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
                     node.voted_for = request.candidateId
                     node.last_heartbeat = time.time()  # Reset election timer
                     node._persist_state()
-                    print(f"[{node.node_id}] ✅ Voted for {request.candidateId} in term {request.term}")
+                    print(f"[{node.node_id}] Voted for {request.candidateId} in term {request.term}")
                 else:
-                    print(f"[{node.node_id}] ❌ Rejected vote (log not up-to-date)")
+                    print(f"[{node.node_id}] Rejected vote (log not up-to-date)")
             else:
-                print(f"[{node.node_id}] ❌ Rejected vote (already voted for {node.voted_for})")
+                print(f"[{node.node_id}] Rejected vote (already voted for {node.voted_for})")
             
             return raft_pb2.VoteResponse(term=node.current_term, voteGranted=vote_granted)
     
