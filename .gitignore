@@ -12,3 +12,4 @@ __pycache__/
 *.jsonl
 operation_log.jsonl
 llm_context_log.jsonl
+*.bat

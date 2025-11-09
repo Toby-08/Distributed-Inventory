@@ -3,16 +3,53 @@ syntax = "proto3";
 package llm;
 
 service LLMService {
-  rpc getLLMAnswer(LLMRequest) returns (LLMResponse);
+  rpc SyncLogs(SyncLogsRequest) returns (SyncLogsResponse);
+  rpc AppendLog(AppendLogRequest) returns (AppendLogResponse);
+  rpc QueryLLM(QueryRequest) returns (QueryResponse);
 }
 
-message LLMRequest {
-  string requestId = 1;
-  string query = 2;
-  string context = 3;
+message SyncLogsRequest {
+  string leader_id = 1;
+  int32 term = 2;
+  repeated LogEntry logs = 3;
 }
 
-message LLMResponse {
-  string requestId = 1;
-  string answer = 2;
+message SyncLogsResponse {
+  bool success = 1;
+  int32 logs_synced = 2;
+  string message = 3;
+}
+
+message LogEntry {
+  int32 term = 1;
+  int32 index = 2;
+  string operation = 3;
+  string product = 4;
+  int32 qty_change = 5;
+  int32 new_qty = 6;
+  string username = 7;
+  string timestamp = 8;
+  string request_id = 9;
+}
+
+message AppendLogRequest {
+  LogEntry log = 1;
+  string leader_id = 2;
+}
+
+message AppendLogResponse {
+  bool success = 1;
+}
+
+message QueryRequest {
+  string query = 1;
+  string username = 2;
+}
+
+message QueryResponse {
+  string response = 1;
+  bool needs_approval = 2;
+  string operation = 3;
+  string product = 4;
+  int32 quantity = 5;
 }

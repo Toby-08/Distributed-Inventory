@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import llm_pb2 as llm__pb2
+import raft_pb2 as raft__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -18,14 +18,14 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in llm_pb2_grpc.py depends on'
+        + ' but the generated code in raft_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class LLMServiceStub(object):
+class RaftServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -34,75 +34,78 @@ class LLMServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.SyncLogs = channel.unary_unary(
-                '/llm.LLMService/SyncLogs',
-                request_serializer=llm__pb2.SyncLogsRequest.SerializeToString,
-                response_deserializer=llm__pb2.SyncLogsResponse.FromString,
+        self.RequestVote = channel.unary_unary(
+                '/raft.RaftService/RequestVote',
+                request_serializer=raft__pb2.VoteRequest.SerializeToString,
+                response_deserializer=raft__pb2.VoteResponse.FromString,
                 _registered_method=True)
-        self.AppendLog = channel.unary_unary(
-                '/llm.LLMService/AppendLog',
-                request_serializer=llm__pb2.AppendLogRequest.SerializeToString,
-                response_deserializer=llm__pb2.AppendLogResponse.FromString,
+        self.AppendEntries = channel.unary_unary(
+                '/raft.RaftService/AppendEntries',
+                request_serializer=raft__pb2.AppendEntriesRequest.SerializeToString,
+                response_deserializer=raft__pb2.AppendEntriesResponse.FromString,
                 _registered_method=True)
-        self.QueryLLM = channel.unary_unary(
-                '/llm.LLMService/QueryLLM',
-                request_serializer=llm__pb2.QueryRequest.SerializeToString,
-                response_deserializer=llm__pb2.QueryResponse.FromString,
+        self.ForwardRequest = channel.unary_unary(
+                '/raft.RaftService/ForwardRequest',
+                request_serializer=raft__pb2.ForwardRequestMsg.SerializeToString,
+                response_deserializer=raft__pb2.ForwardResponseMsg.FromString,
                 _registered_method=True)
 
 
-class LLMServiceServicer(object):
+class RaftServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def SyncLogs(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+    def RequestVote(self, request, context):
+        """Leader election
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def AppendLog(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+    def AppendEntries(self, request, context):
+        """Log replication
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def QueryLLM(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+    def ForwardRequest(self, request, context):
+        """Client request forwarding
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_LLMServiceServicer_to_server(servicer, server):
+def add_RaftServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'SyncLogs': grpc.unary_unary_rpc_method_handler(
-                    servicer.SyncLogs,
-                    request_deserializer=llm__pb2.SyncLogsRequest.FromString,
-                    response_serializer=llm__pb2.SyncLogsResponse.SerializeToString,
+            'RequestVote': grpc.unary_unary_rpc_method_handler(
+                    servicer.RequestVote,
+                    request_deserializer=raft__pb2.VoteRequest.FromString,
+                    response_serializer=raft__pb2.VoteResponse.SerializeToString,
             ),
-            'AppendLog': grpc.unary_unary_rpc_method_handler(
-                    servicer.AppendLog,
-                    request_deserializer=llm__pb2.AppendLogRequest.FromString,
-                    response_serializer=llm__pb2.AppendLogResponse.SerializeToString,
+            'AppendEntries': grpc.unary_unary_rpc_method_handler(
+                    servicer.AppendEntries,
+                    request_deserializer=raft__pb2.AppendEntriesRequest.FromString,
+                    response_serializer=raft__pb2.AppendEntriesResponse.SerializeToString,
             ),
-            'QueryLLM': grpc.unary_unary_rpc_method_handler(
-                    servicer.QueryLLM,
-                    request_deserializer=llm__pb2.QueryRequest.FromString,
-                    response_serializer=llm__pb2.QueryResponse.SerializeToString,
+            'ForwardRequest': grpc.unary_unary_rpc_method_handler(
+                    servicer.ForwardRequest,
+                    request_deserializer=raft__pb2.ForwardRequestMsg.FromString,
+                    response_serializer=raft__pb2.ForwardResponseMsg.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'llm.LLMService', rpc_method_handlers)
+            'raft.RaftService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('llm.LLMService', rpc_method_handlers)
+    server.add_registered_method_handlers('raft.RaftService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class LLMService(object):
+class RaftService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def SyncLogs(request,
+    def RequestVote(request,
             target,
             options=(),
             channel_credentials=None,
@@ -115,9 +118,9 @@ class LLMService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/llm.LLMService/SyncLogs',
-            llm__pb2.SyncLogsRequest.SerializeToString,
-            llm__pb2.SyncLogsResponse.FromString,
+            '/raft.RaftService/RequestVote',
+            raft__pb2.VoteRequest.SerializeToString,
+            raft__pb2.VoteResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -129,7 +132,7 @@ class LLMService(object):
             _registered_method=True)
 
     @staticmethod
-    def AppendLog(request,
+    def AppendEntries(request,
             target,
             options=(),
             channel_credentials=None,
@@ -142,9 +145,9 @@ class LLMService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/llm.LLMService/AppendLog',
-            llm__pb2.AppendLogRequest.SerializeToString,
-            llm__pb2.AppendLogResponse.FromString,
+            '/raft.RaftService/AppendEntries',
+            raft__pb2.AppendEntriesRequest.SerializeToString,
+            raft__pb2.AppendEntriesResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -156,7 +159,7 @@ class LLMService(object):
             _registered_method=True)
 
     @staticmethod
-    def QueryLLM(request,
+    def ForwardRequest(request,
             target,
             options=(),
             channel_credentials=None,
@@ -169,9 +172,9 @@ class LLMService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/llm.LLMService/QueryLLM',
-            llm__pb2.QueryRequest.SerializeToString,
-            llm__pb2.QueryResponse.FromString,
+            '/raft.RaftService/ForwardRequest',
+            raft__pb2.ForwardRequestMsg.SerializeToString,
+            raft__pb2.ForwardResponseMsg.FromString,
             options,
             channel_credentials,
             insecure,

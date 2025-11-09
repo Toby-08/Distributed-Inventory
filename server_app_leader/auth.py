@@ -1,32 +1,31 @@
-import jwt
-from datetime import datetime, timezone, timedelta
+import os
+import time
 from typing import Optional
+import jwt
 
-SECRET_KEY = "your-secret-key-change-in-production"  # TODO: Move to environment variable
-ALGORITHM = "HS256"
-TOKEN_EXPIRY_HOURS = 1
+# Use env var or a dev default
+SECRET_KEY = os.environ.get("JWT_SECRET", "dev-secret-change-me")
+ALGO = "HS256"
+TTL_SECONDS = 3600  # 1 hour
+
+# Simple demo user store
+_USERS = {
+    "admin": "admin123",
+    "user": "1234",
+    "jenil": "1234"
+}
+
+def authenticate_user(username: str, password: str) -> bool:
+    return _USERS.get(username) == password
 
 def generate_token(username: str) -> str:
-    """Generate JWT token for authenticated user"""
-    now = datetime.now(timezone.utc)
-    payload = {
-        "username": username,
-        "exp": now + timedelta(hours=TOKEN_EXPIRY_HOURS),
-        "iat": now
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    now = int(time.time())
+    payload = {"sub": username, "iat": now, "exp": now + TTL_SECONDS}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGO)
 
-def verify_token(token: str) -> str:
-    """
-    Returns username if valid, raises ValueError otherwise
-    
-    Raises:
-        ValueError: If token is expired or invalid
-    """
+def verify_token(token: str) -> Optional[str]:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload["username"]
-    except jwt.ExpiredSignatureError:
-        raise ValueError("Token expired")
-    except jwt.InvalidTokenError:
-        raise ValueError("Invalid token")
+        data = jwt.decode(token, SECRET_KEY, algorithms=[ALGO])
+        return data.get("sub")
+    except Exception:
+        return None

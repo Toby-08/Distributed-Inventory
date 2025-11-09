@@ -20,13 +20,15 @@ message LoginResponse {
 
 message PostRequest {
   string token = 1;
-  string type = 2;  // "add_inventory", "update_inventory", "query_ai"
+  string type = 2;
   string data = 3;
+  string requestId = 4; 
 }
 
 message PostResponse {
   string status = 1;
   string result = 2;
+  string requestId = 3; 
 }
 
 message GetRequest {

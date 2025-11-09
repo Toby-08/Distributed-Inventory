@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tapp.proto\x12\x03\x61pp\"2\n\x0cLoginRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\".\n\rLoginResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\r\n\x05token\x18\x02 \x01(\t\"8\n\x0bPostRequest\x12\r\n\x05token\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\t\".\n\x0cPostResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0e\n\x06result\x18\x02 \x01(\t\"9\n\nGetRequest\x12\r\n\x05token\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0e\n\x06params\x18\x03 \x01(\t\",\n\x0bGetResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\r\n\x05items\x18\x02 \x03(\t2\x93\x01\n\nAppService\x12.\n\x05login\x12\x11.app.LoginRequest\x1a\x12.app.LoginResponse\x12+\n\x04post\x12\x10.app.PostRequest\x1a\x11.app.PostResponse\x12(\n\x03get\x12\x0f.app.GetRequest\x1a\x10.app.GetResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tapp.proto\x12\x03\x61pp\"2\n\x0cLoginRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\".\n\rLoginResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\r\n\x05token\x18\x02 \x01(\t\"K\n\x0bPostRequest\x12\r\n\x05token\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\t\x12\x11\n\trequestId\x18\x04 \x01(\t\"A\n\x0cPostResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0e\n\x06result\x18\x02 \x01(\t\x12\x11\n\trequestId\x18\x03 \x01(\t\"9\n\nGetRequest\x12\r\n\x05token\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0e\n\x06params\x18\x03 \x01(\t\",\n\x0bGetResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\r\n\x05items\x18\x02 \x03(\t2\x93\x01\n\nAppService\x12.\n\x05login\x12\x11.app.LoginRequest\x1a\x12.app.LoginResponse\x12+\n\x04post\x12\x10.app.PostRequest\x1a\x11.app.PostResponse\x12(\n\x03get\x12\x0f.app.GetRequest\x1a\x10.app.GetResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,13 +36,13 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_LOGINRESPONSE']._serialized_start=70
   _globals['_LOGINRESPONSE']._serialized_end=116
   _globals['_POSTREQUEST']._serialized_start=118
-  _globals['_POSTREQUEST']._serialized_end=174
-  _globals['_POSTRESPONSE']._serialized_start=176
-  _globals['_POSTRESPONSE']._serialized_end=222
-  _globals['_GETREQUEST']._serialized_start=224
-  _globals['_GETREQUEST']._serialized_end=281
-  _globals['_GETRESPONSE']._serialized_start=283
-  _globals['_GETRESPONSE']._serialized_end=327
-  _globals['_APPSERVICE']._serialized_start=330
-  _globals['_APPSERVICE']._serialized_end=477
+  _globals['_POSTREQUEST']._serialized_end=193
+  _globals['_POSTRESPONSE']._serialized_start=195
+  _globals['_POSTRESPONSE']._serialized_end=260
+  _globals['_GETREQUEST']._serialized_start=262
+  _globals['_GETREQUEST']._serialized_end=319
+  _globals['_GETRESPONSE']._serialized_start=321
+  _globals['_GETRESPONSE']._serialized_end=365
+  _globals['_APPSERVICE']._serialized_start=368
+  _globals['_APPSERVICE']._serialized_end=515
 # @@protoc_insertion_point(module_scope)
