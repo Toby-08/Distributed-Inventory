@@ -34,7 +34,7 @@ class RaftClient:
             except:
                 continue
         
-        raise Exception("❌ No servers available")
+        raise Exception("No servers available")
     
     def login(self, username, password):
         """Login and get token"""
@@ -49,13 +49,13 @@ class RaftClient:
             if response.status == "success":
                 self.token = response.token
                 self.username = username
-                print(f"✅ Logged in as {username}")
+                print(f"Logged in as {username}")
                 return True
             else:
-                print(f"❌ Login failed: {response.status}")
+                print(f"Login failed: {response.status}")
                 return False
         except Exception as e:
-            print(f"❌ Login error: {e}")
+            print(f"Login error: {e}")
             return False
     
     def add_inventory(self, product, qty):
@@ -67,7 +67,7 @@ class RaftClient:
             try:
                 stub, addr, channel = self._get_stub()
                 
-                print(f"🔄 Attempt {attempt + 1}: Sending to {addr}...")
+                print(f"Attempt {attempt + 1}: Sending to {addr}...")
                 
                 response = stub.post(app_pb2.PostRequest(
                     token=self.token,
@@ -80,7 +80,7 @@ class RaftClient:
                 
                 if response.status == "added":
                     self.leader_address = addr  # Cache leader
-                    print(f"✅ Added {qty} units of {product}")
+                    print(f"Added {qty} units of {product}")
                     print(f"   Result: {response.result}")
                     return True
                 
@@ -89,36 +89,36 @@ class RaftClient:
                     leader_info = response.result
                     if leader_info.startswith("LEADER:"):
                         new_leader = leader_info.replace("LEADER:", "")
-                        print(f"🔄 Redirecting to leader: {new_leader}")
+                        print(f"Redirecting to leader: {new_leader}")
                         self.leader_address = new_leader
                         continue
                 
                 elif response.status == "no_leader":
-                    print(f"⚠️  No leader available, election in progress...")
+                    print(f"No leader available, election in progress...")
                     self.leader_address = None
                     time.sleep(1.0)
                     continue
                 
                 elif response.status == "timeout":
-                    print(f"⏳ Operation timeout (may still succeed)")
+                    print(f"Operation timeout (may still succeed)")
                     print(f"   Retrying with same request ID for idempotency...")
                     time.sleep(0.5)
                     continue
                 
                 else:
-                    print(f"❌ Operation failed: {response.status} - {response.result}")
+                    print(f"Operation failed: {response.status} - {response.result}")
                     return False
                     
             except grpc.RpcError as e:
                 if attempt < max_retries - 1:
-                    print(f"⚠️  RPC error, retrying... ({e.code()})")
+                    print(f"RPC error, retrying... ({e.code()})")
                     self.leader_address = None
                     time.sleep(0.5)
                 else:
-                    print(f"❌ All retries failed: {e.details()}")
+                    print(f"All retries failed: {e.details()}")
             
             except Exception as e:
-                print(f"❌ Unexpected error: {e}")
+                print(f"Unexpected error: {e}")
                 return False
         
         return False
@@ -132,7 +132,7 @@ class RaftClient:
             try:
                 stub, addr, channel = self._get_stub()
                 
-                print(f"🔄 Attempt {attempt + 1}: Sending to {addr}...")
+                print(f"Attempt {attempt + 1}: Sending to {addr}...")
                 
                 response = stub.post(app_pb2.PostRequest(
                     token=self.token,
@@ -145,7 +145,7 @@ class RaftClient:
                 
                 if response.status == "updated":
                     self.leader_address = addr
-                    print(f"✅ Updated {product}")
+                    print(f"Updated {product}")
                     print(f"   Result: {response.result}")
                     return True
                 
@@ -153,32 +153,32 @@ class RaftClient:
                     leader_info = response.result
                     if leader_info.startswith("LEADER:"):
                         new_leader = leader_info.replace("LEADER:", "")
-                        print(f"🔄 Redirecting to leader: {new_leader}")
+                        print(f"Redirecting to leader: {new_leader}")
                         self.leader_address = new_leader
                         continue
                 
                 elif response.status == "no_leader":
-                    print(f"⚠️  No leader available, election in progress...")
+                    print(f"No leader available, election in progress...")
                     self.leader_address = None
                     time.sleep(1.0)
                     continue
                 
                 elif response.status == "timeout":
-                    print(f"⏳ Operation timeout (may still succeed)")
+                    print(f"Operation timeout (may still succeed)")
                     time.sleep(0.5)
                     continue
                 
                 else:
-                    print(f"❌ Operation failed: {response.status} - {response.result}")
+                    print(f"Operation failed: {response.status} - {response.result}")
                     return False
                     
             except grpc.RpcError as e:
                 if attempt < max_retries - 1:
-                    print(f"⚠️  RPC error, retrying...")
+                    print(f"RPC error, retrying...")
                     self.leader_address = None
                     time.sleep(0.5)
                 else:
-                    print(f"❌ All retries failed: {e.details()}")
+                    print(f"All retries failed: {e.details()}")
         
         return False
     
@@ -193,7 +193,7 @@ class RaftClient:
             channel.close()
             
             if response.status == "ok":
-                print(f"\n📦 Current Inventory (from {addr}):")
+                print(f"\n Current Inventory (from {addr}):")
                 if response.items:
                     for item in response.items:
                         product, qty = item.split(":", 1)
@@ -202,16 +202,16 @@ class RaftClient:
                     print("   (empty)")
                 return True
             else:
-                print(f"❌ Failed to get inventory: {response.status}")
+                print(f"Failed to get inventory: {response.status}")
                 return False
                 
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"Error: {e}")
             return False
 
 def main():
     print("="*60)
-    print("🚀 Distributed Inventory System with Raft Consensus")
+    print("Distributed Inventory System with Raft Consensus")
     print("="*60)
     
     # Connect to all known servers
@@ -219,18 +219,18 @@ def main():
     client = RaftClient(servers)
     
     # Login
-    print("\n🔐 Login required")
+    print("\nLogin required")
     username = input("Username [admin]: ").strip() or "admin"
     password = input("Password [admin123]: ").strip() or "admin123"
     
     if not client.login(username, password):
-        print("❌ Login failed. Exiting.")
+        print("Login failed. Exiting.")
         return
     
     # Interactive menu
     while True:
         print("\n" + "="*60)
-        print("📋 Menu")
+        print("Menu")
         print("="*60)
         print("1. Add Inventory")
         print("2. Update Inventory")
@@ -238,39 +238,39 @@ def main():
         print("4. Exit")
         print("="*60)
         
-        choice = input("\n👉 Choice: ").strip()
+        choice = input("\nChoice: ").strip()
         
         if choice == '1':
             product = input("Product name: ").strip()
             if not product:
-                print("❌ Product name cannot be empty")
+                print("Product name cannot be empty")
                 continue
             try:
                 qty = int(input("Quantity to add: ").strip())
                 client.add_inventory(product, qty)
             except ValueError:
-                print("❌ Invalid quantity")
+                print("Invalid quantity")
         
         elif choice == '2':
             product = input("Product name: ").strip()
             if not product:
-                print("❌ Product name cannot be empty")
+                print("Product name cannot be empty")
                 continue
             try:
                 new_qty = int(input("New quantity: ").strip())
                 client.update_inventory(product, new_qty)
             except ValueError:
-                print("❌ Invalid quantity")
+                print("Invalid quantity")
         
         elif choice == '3':
             client.get_inventory()
         
         elif choice == '4':
-            print("\n👋 Goodbye!")
+            print("\nGoodbye!")
             break
         
         else:
-            print("❌ Invalid choice")
+            print("Invalid choice")
 
 if __name__ == '__main__':
     main()

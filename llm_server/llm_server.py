@@ -116,7 +116,7 @@ Current context summary:
     # ✅ New: Bulk sync logs from leader
     def SyncLogs(self, request, context):
         """Handle bulk log sync from Raft leader"""
-        print(f"[LLM] 📥 Receiving {len(request.logs)} logs from leader {request.leader_id} (term {request.term})")
+        print(f"[LLM] Receiving {len(request.logs)} logs from leader {request.leader_id} (term {request.term})")
         
         synced_count = 0
         for log_entry in request.logs:
@@ -147,7 +147,7 @@ Current context summary:
             
             synced_count += 1
         
-        print(f"[LLM] ✅ Successfully synced {synced_count} logs from {request.leader_id}")
+        print(f"[LLM] Successfully synced {synced_count} logs from {request.leader_id}")
         
         return llm_pb2.SyncLogsResponse(
             success=True,
@@ -175,12 +175,12 @@ Current context summary:
             if not any(l['index'] == log_entry['index'] and l['term'] == log_entry['term'] for l in self.logs):
                 self.logs.append(log_entry)
                 self._persist_log(log_entry)
-                print(f"[LLM] 📝 Appended log entry: {log_entry['operation']} {log_entry['product']}")
+                print(f"[LLM] Appended log entry: {log_entry['operation']} {log_entry['product']}")
             
             return llm_pb2.AppendLogResponse(success=True)
             
         except Exception as e:
-            print(f"[LLM] ❌ Error appending log: {e}")
+            print(f"[LLM] Error appending log: {e}")
             return llm_pb2.AppendLogResponse(success=False)
     
     def GetResponse(self, request, context):
@@ -219,7 +219,7 @@ Current context summary:
             
         except Exception as e:
             error_msg = f"Error generating response: {str(e)}"
-            print(f"[LLM] ❌ {error_msg}")
+            print(f"[LLM] Error generating response: {error_msg}")
             return llm_pb2.LLMResponse(
                 response=error_msg,
                 success=False
@@ -234,10 +234,10 @@ def serve():
     # Check for API key
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
-        print("[LLM] ⚠️  Running in MOCK mode (no API key found)")
-        print("[LLM] ℹ️  Set ANTHROPIC_API_KEY environment variable to enable real LLM")
+        print("[LLM] Running in MOCK mode (no API key found)")
+        print("[LLM] Set ANTHROPIC_API_KEY environment variable to enable real LLM")
     else:
-        print("[LLM] ✅ API key found - Real LLM mode enabled")
+        print("[LLM] API key found - Real LLM mode enabled")
     
     # Create service
     llm_service = LLMService()
