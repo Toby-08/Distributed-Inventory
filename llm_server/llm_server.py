@@ -171,7 +171,7 @@ Current context summary:
                 'request_id': request.log.request_id
             }
             
-            # Check if log already exists (idempotency)
+         
             if not any(l['index'] == log_entry['index'] and l['term'] == log_entry['term'] for l in self.logs):
                 self.logs.append(log_entry)
                 self._persist_log(log_entry)
