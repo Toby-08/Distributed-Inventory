@@ -172,7 +172,7 @@ class RaftNode:
         except Exception as e:
             print(f"[{self.node_id}]  Failed to persist log entry: {e}")
 
-    # 🆕 Health tracking methods
+    # Health tracking methods
     def _mark_peer_dead(self, peer: str):
         """Mark a peer as dead"""
         with self.state_lock:
@@ -406,7 +406,7 @@ class RaftNode:
         self.health_thread = threading.Thread(target=self._health_check_loop, daemon=True)
         self.health_thread.start()
         
-        # ⭐ NEW: LLM health monitor
+        # NEW: LLM health monitor
         self.llm_health_thread = threading.Thread(target=self._llm_health_monitor, daemon=True)
         self.llm_health_thread.start()
         
@@ -428,7 +428,7 @@ class RaftNode:
                             backoff = self._random_election_timeout() * (1.5 + 0.5 * self.failed_elections)
                             self.election_timeout = backoff
                             self.last_heartbeat = time.time()
-                            print(f"[{self.node_id}] ⏳ Skipping election (no quorum). Backing off {backoff:.2f}s")
+                            print(f"[{self.node_id}]  Skipping election (no quorum). Backing off {backoff:.2f}s")
                         else:
                             print(f"[{self.node_id}] Election timeout! Starting election...")
                             start_election = True
@@ -683,7 +683,7 @@ class RaftNode:
                         self._heartbeat_send_count = 0
                     self._heartbeat_send_count += 1
                     
-                    # ⭐ Log every 70th heartbeat (~7 seconds at 100ms interval)
+                    #  Log every 70th heartbeat (~7 seconds at 100ms interval)
                     if self._heartbeat_send_count % 70 == 1:
                         print(f"[{self.node_id}] Sending heartbeats (count={self._heartbeat_send_count})...")
                     
@@ -761,7 +761,7 @@ class RaftNode:
 
     def _llm_health_monitor(self):
         """Background thread to monitor LLM server availability"""
-        # ⭐ Check immediately on first run (don't sleep first)
+        #  Check immediately on first run (don't sleep first)
         first_check = True
         
         while self.running:

@@ -73,7 +73,7 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
                 print(f"[{node.node_id}] Reverted to FOLLOWER for term {request.term}")
             node.state = NodeState.FOLLOWER
             
-            # ⭐ Reset election timer!
+            #  Reset election timer!
             node.last_heartbeat = time.time()
             
             # Handle heartbeats (empty entries)
@@ -86,23 +86,23 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
                 
                 # Log every 50th heartbeat (~5 seconds at 100ms interval)
                 if node._heartbeat_count % 50 == 0:
-                    print(f"[{node.node_id}] 💚 Heartbeat from {request.leaderId} (term {request.term}, count={node._heartbeat_count})")
+                    print(f"[{node.node_id}]  Heartbeat from {request.leaderId} (term {request.term}, count={node._heartbeat_count})")
                 
                 return raft_pb2.AppendEntriesResponse(term=node.current_term, success=True)
             
             # Log replication (for actual entries) - always log these
-            print(f"[{node.node_id}] 📨 Received {len(request.entries)} entries from {request.leaderId}")
+            print(f"[{node.node_id}]  Received {len(request.entries)} entries from {request.leaderId}")
             
             # Check log consistency
             if request.prevLogIndex > 0:
                 if request.prevLogIndex > len(node.log):
                     # Missing entries
-                    print(f"[{node.node_id}] ❌ Missing entries (prevLogIndex={request.prevLogIndex}, log length={len(node.log)})")
+                    print(f"[{node.node_id}]  Missing entries (prevLogIndex={request.prevLogIndex}, log length={len(node.log)})")
                     return raft_pb2.AppendEntriesResponse(term=node.current_term, success=False)
                 
                 if node.log[request.prevLogIndex - 1]['term'] != request.prevLogTerm:
                     # Log conflict - delete conflicting entries
-                    print(f"[{node.node_id}] ⚠️ Log conflict at index {request.prevLogIndex}")
+                    print(f"[{node.node_id}]  Log conflict at index {request.prevLogIndex}")
                     node.log = node.log[:request.prevLogIndex - 1]
                     return raft_pb2.AppendEntriesResponse(term=node.current_term, success=False)
             
@@ -132,7 +132,7 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
                     node.log.append(entry)
                     node._persist_log_entry(entry)
                     node._apply_loaded(entry)
-                    print(f"[{node.node_id}] ✅ Applied log {entry['index']}: {entry['operation']} {entry['product']}")
+                    print(f"[{node.node_id}]  Applied log {entry['index']}: {entry['operation']} {entry['product']}")
             
             # Update commit index
             if request.leaderCommit > node.commit_index:
