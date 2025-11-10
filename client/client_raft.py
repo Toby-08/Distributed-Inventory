@@ -1,276 +1,338 @@
 import grpc
-import app_pb2
-import app_pb2_grpc
+import raft_pb2
+import raft_pb2_grpc
 import time
 import uuid
+from datetime import datetime
 
 class RaftClient:
-    def __init__(self, initial_servers):
+    def __init__(self, initial_servers, username, password):
         """
-        initial_servers: list like ['127.0.0.1:50051', '127.0.0.1:50052', '127.0.0.1:50053']
+        initial_servers: list of "host:port" strings
         """
         self.servers = initial_servers
-        self.leader_address = None
-        self.token = None
-        self.username = None
+        self.current_leader = None
+        self.request_timeout = 3.0
+        self.max_retries = 3
+        self.username = username
+        self.password = password
+    
+    def _find_leader(self):
+        """Query all servers to find current leader"""
+        print("Finding current leader...")
+        
+        for server_addr in self.servers:
+            try:
+                channel = grpc.insecure_channel(server_addr)
+                stub = raft_pb2_grpc.RaftServiceStub(channel)
+                
+                response = stub.GetLeaderInfo(
+                    raft_pb2.GetLeaderRequest(),
+                    timeout=1.0
+                )
+                
+                if response.is_leader:
+                    self.current_leader = server_addr
+                    print(f"Found leader: {server_addr}")
+                    channel.close()
+                    return server_addr
+                elif response.leader_address:
+                    self.current_leader = response.leader_address
+                    print(f"Leader is: {response.leader_address} (via {server_addr})")
+                    channel.close()
+                    return response.leader_address
+                
+                channel.close()
+                
+            except grpc.RpcError as e:
+                print(f" {server_addr}: {e.code()}")
+                continue
+            except Exception as e:
+                continue
+        
+        # Fallback: try first server
+        print("Could not find leader, defaulting to first server")
+        self.current_leader = self.servers[0]
+        return self.current_leader
     
     def _get_stub(self):
-        """Get a stub, trying leader first, then other servers"""
-        addresses_to_try = []
+        """Get gRPC stub for current leader"""
+        if not self.current_leader:
+            self._find_leader()
         
-        # Try known leader first
-        if self.leader_address:
-            addresses_to_try.append(self.leader_address)
-        
-        # Then try all servers
-        addresses_to_try.extend([s for s in self.servers if s != self.leader_address])
-        
-        for addr in addresses_to_try:
-            try:
-                channel = grpc.insecure_channel(addr)
-                # Quick connectivity check
-                grpc.channel_ready_future(channel).result(timeout=0.5)
-                return app_pb2_grpc.AppServiceStub(channel), addr, channel
-            except:
-                continue
-        
-        raise Exception("No servers available")
+        channel = grpc.insecure_channel(self.current_leader)
+        return raft_pb2_grpc.RaftServiceStub(channel), channel
     
-    def login(self, username, password):
-        """Login and get token"""
-        try:
-            stub, addr, channel = self._get_stub()
-            response = stub.login(app_pb2.LoginRequest(
-                username=username,
-                password=password
-            ))
-            channel.close()
-            
-            if response.status == "success":
-                self.token = response.token
-                self.username = username
-                print(f"Logged in as {username}")
-                return True
-            else:
-                print(f"Login failed: {response.status}")
-                return False
-        except Exception as e:
-            print(f"Login error: {e}")
-            return False
-    
-    def add_inventory(self, product, qty):
-        """Add inventory with automatic leader detection and retry"""
+    def add_inventory(self, product, quantity):
+        """Add inventory with leader discovery and retries"""
         request_id = str(uuid.uuid4())
-        max_retries = 3
         
-        for attempt in range(max_retries):
+        for attempt in range(1, self.max_retries + 1):
             try:
-                stub, addr, channel = self._get_stub()
+                if attempt > 1:
+                    print(f"Retrying (attempt {attempt}/{self.max_retries})...")
+                    self._find_leader()
                 
-                print(f"Attempt {attempt + 1}: Sending to {addr}...")
+                stub, channel = self._get_stub()
                 
-                response = stub.post(app_pb2.PostRequest(
-                    token=self.token,
-                    type="add_inventory",
-                    data=f"{product}:{qty}",
-                    requestId=request_id   # removed params
-                ), timeout=10.0)
+                response = stub.AddInventory(
+                    raft_pb2.AddInventoryRequest(
+                        username=self.username,
+                        product=product,
+                        quantity=quantity,
+                        request_id=request_id,
+                        timestamp=datetime.now().isoformat()
+                    ),
+                    timeout=self.request_timeout
+                )
                 
                 channel.close()
                 
-                if response.status == "added":
-                    self.leader_address = addr  # Cache leader
-                    print(f"Added {qty} units of {product}")
-                    print(f"   Result: {response.result}")
+                if response.success:
+                    print(f"Success: {response.message}")
                     return True
-                
-                elif response.status == "redirect":
-                    # Server told us who the leader is
-                    leader_info = response.result
-                    if leader_info.startswith("LEADER:"):
-                        new_leader = leader_info.replace("LEADER:", "")
-                        print(f"Redirecting to leader: {new_leader}")
-                        self.leader_address = new_leader
-                        continue
-                
-                elif response.status == "no_leader":
-                    print(f"No leader available, election in progress...")
-                    self.leader_address = None
-                    time.sleep(1.0)
-                    continue
-                
-                elif response.status == "timeout":
-                    print(f"Operation timeout (may still succeed)")
-                    print(f"   Retrying with same request ID for idempotency...")
-                    time.sleep(0.5)
-                    continue
-                
                 else:
-                    print(f"Operation failed: {response.status} - {response.result}")
+                    if "not leader" in response.message.lower():
+                        if response.leader_hint:
+                            print(f"Redirecting to leader: {response.leader_hint}")
+                            self.current_leader = response.leader_hint
+                        else:
+                            self._find_leader()
+                        continue
+                    print(f"Failed: {response.message}")
                     return False
                     
             except grpc.RpcError as e:
-                if attempt < max_retries - 1:
-                    print(f"RPC error, retrying... ({e.code()})")
-                    self.leader_address = None
-                    time.sleep(0.5)
+                if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                    print(f"Timeout on attempt {attempt}")
+                elif e.code() == grpc.StatusCode.UNAVAILABLE:
+                    print(f"Server unavailable: {self.current_leader}")
+                    self.current_leader = None
                 else:
-                    print(f"All retries failed: {e.details()}")
-            
+                    print(f"RPC Error: {e.code()}")
+                
+                if attempt < self.max_retries:
+                    time.sleep(1)
+                    
             except Exception as e:
-                print(f"Unexpected error: {e}")
-                return False
+                print(f"Error: {type(e).__name__}: {e}")
+                if attempt < self.max_retries:
+                    time.sleep(1)
         
+        print("All retry attempts failed")
         return False
     
-    def update_inventory(self, product, new_qty):
-        """Update inventory to specific quantity"""
+    def update_inventory(self, product, quantity):
+        """Update inventory to absolute quantity"""
         request_id = str(uuid.uuid4())
-        max_retries = 3
         
-        for attempt in range(max_retries):
+        for attempt in range(1, self.max_retries + 1):
             try:
-                stub, addr, channel = self._get_stub()
+                if attempt > 1:
+                    print(f"Retrying (attempt {attempt}/{self.max_retries})...")
+                    self._find_leader()
                 
-                print(f"Attempt {attempt + 1}: Sending to {addr}...")
+                stub, channel = self._get_stub()
                 
-                response = stub.post(app_pb2.PostRequest(
-                    token=self.token,
-                    type="update_inventory",
-                    data=f"{product}:{new_qty}",
-                    requestId=request_id
-                ), timeout=10.0)
+                response = stub.UpdateInventory(
+                    raft_pb2.UpdateInventoryRequest(
+                        username=self.username,
+                        product=product,
+                        quantity=quantity,
+                        request_id=request_id,
+                        timestamp=datetime.now().isoformat()
+                    ),
+                    timeout=self.request_timeout
+                )
                 
                 channel.close()
                 
-                if response.status == "updated":
-                    self.leader_address = addr
-                    print(f"Updated {product}")
-                    print(f"   Result: {response.result}")
+                if response.success:
+                    print(f"Success: {response.message}")
                     return True
-                
-                elif response.status == "redirect":
-                    leader_info = response.result
-                    if leader_info.startswith("LEADER:"):
-                        new_leader = leader_info.replace("LEADER:", "")
-                        print(f"Redirecting to leader: {new_leader}")
-                        self.leader_address = new_leader
-                        continue
-                
-                elif response.status == "no_leader":
-                    print(f"No leader available, election in progress...")
-                    self.leader_address = None
-                    time.sleep(1.0)
-                    continue
-                
-                elif response.status == "timeout":
-                    print(f"Operation timeout (may still succeed)")
-                    time.sleep(0.5)
-                    continue
-                
                 else:
-                    print(f"Operation failed: {response.status} - {response.result}")
+                    if "not leader" in response.message.lower():
+                        if response.leader_hint:
+                            self.current_leader = response.leader_hint
+                        else:
+                            self._find_leader()
+                        continue
+                    print(f"Failed: {response.message}")
                     return False
                     
             except grpc.RpcError as e:
-                if attempt < max_retries - 1:
-                    print(f"RPC error, retrying...")
-                    self.leader_address = None
-                    time.sleep(0.5)
+                if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                    print(f"Timeout on attempt {attempt}")
+                elif e.code() == grpc.StatusCode.UNAVAILABLE:
+                    print(f"Server unavailable: {self.current_leader}")
+                    self.current_leader = None
                 else:
-                    print(f"All retries failed: {e.details()}")
+                    print(f"RPC Error: {e.code()}")
+                
+                if attempt < self.max_retries:
+                    time.sleep(1)
+                    
+            except Exception as e:
+                print(f"Error: {type(e).__name__}: {e}")
+                if attempt < self.max_retries:
+                    time.sleep(1)
         
+        print("All retry attempts failed")
         return False
     
-    def get_inventory(self):
-        """Get current inventory (can be served by any node)"""
-        try:
-            stub, addr, channel = self._get_stub()
-            response = stub.get(app_pb2.GetRequest(
-                token=self.token,
-                type="get_inventory"
-            ))  # removed params
-            channel.close()
-            
-            if response.status == "ok":
-                print(f"\n Current Inventory (from {addr}):")
+    def view_inventory(self):
+        """View current inventory from any server"""
+        for server_addr in self.servers:
+            try:
+                channel = grpc.insecure_channel(server_addr)
+                stub = raft_pb2_grpc.RaftServiceStub(channel)
+                
+                response = stub.GetInventory(
+                    raft_pb2.GetInventoryRequest(),
+                    timeout=2.0
+                )
+                
+                channel.close()
+                
+                print("\n" + "="*40)
+                print("Current Inventory")
+                print("="*40)
                 if response.items:
                     for item in response.items:
-                        product, qty = item.split(":", 1)
-                        print(f"   {product}: {qty} units")
+                        print(f"  {item.product:20s} : {item.quantity:>5d} units")
                 else:
-                    print("   (empty)")
+                    print("  (empty)")
+                print("="*40 + "\n")
                 return True
-            else:
-                print(f"Failed to get inventory: {response.status}")
-                return False
                 
-        except Exception as e:
-            print(f"Error: {e}")
-            return False
+            except Exception:
+                continue
+        
+        print("Could not retrieve inventory from any server")
+        return False
+    
+    def query_llm(self, query):
+        """Query LLM about inventory"""
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                if attempt > 1:
+                    print(f"Retrying query (attempt {attempt}/{self.max_retries})...")
+                
+                # Try each server (query can go to any node)
+                for server_addr in self.servers:
+                    try:
+                        channel = grpc.insecure_channel(server_addr)
+                        stub = raft_pb2_grpc.RaftServiceStub(channel)
+                        
+                        response = stub.QueryLLM(
+                            raft_pb2.QueryLLMRequest(
+                                query=query,
+                                username=self.username
+                            ),
+                            timeout=self.request_timeout
+                        )
+                        
+                        channel.close()
+                        
+                        if response.success:
+                            print("\n" + "="*50)
+                            print("AI Response:")
+                            print("="*50)
+                            print(response.response)
+                            print("="*50 + "\n")
+                            return True
+                        else:
+                            if attempt == self.max_retries:
+                                print(f"Query failed: {response.error}")
+                            continue
+                    
+                    except grpc.RpcError:
+                        continue
+                
+                if attempt < self.max_retries:
+                    time.sleep(1)
+                    
+            except Exception as e:
+                print(f"Error: {type(e).__name__}: {e}")
+                if attempt < self.max_retries:
+                    time.sleep(1)
+        
+        print("Could not reach any server for query")
+        return False
+
 
 def main():
-    print("="*60)
-    print("Distributed Inventory System with Raft Consensus")
-    print("="*60)
+    import os
     
-    # Connect to all known servers
-    servers = ['127.0.0.1:50051', '127.0.0.1:50052', '127.0.0.1:50053']
-    client = RaftClient(servers)
+    # Get credentials
+    username = input("Username: ").strip() or "admin"
+    password = input("Password: ").strip() or "admin123"
     
-    # Login
-    print("\nLogin required")
-    username = input("Username [admin]: ").strip() or "admin"
-    password = input("Password [admin123]: ").strip() or "admin123"
+    print(f"\nStarting client as: {username}\n")
     
-    if not client.login(username, password):
-        print("Login failed. Exiting.")
-        return
+    initial_servers = [
+        "127.0.0.1:50051",
+        "127.0.0.1:50052",
+        "127.0.0.1:50053"
+    ]
     
-    # Interactive menu
+    client = RaftClient(initial_servers, username, password)
+    
+    # Find leader on startup
+    client._find_leader()
+    
     while True:
-        print("\n" + "="*60)
-        print("Menu")
-        print("="*60)
-        print("1. Add Inventory")
-        print("2. Update Inventory")
-        print("3. View Inventory")
-        print("4. Exit")
-        print("="*60)
+        print("\n" + "="*40)
+        print("Inventory Management")
+        print("="*40)
+        print("1. Add Inventory      - Increase quantity")
+        print("2. Update Inventory   - Set absolute quantity")
+        print("3. View Inventory     - Display all items")
+        print("4. Query AI           - Ask questions about inventory")
+        print("5. Exit")
+        print("="*40)
         
-        choice = input("\nChoice: ").strip()
+        choice = input("Choice: ").strip()
         
-        if choice == '1':
+        if choice == "1":
             product = input("Product name: ").strip()
             if not product:
-                print("Product name cannot be empty")
+                print("Product name required")
                 continue
             try:
-                qty = int(input("Quantity to add: ").strip())
-                client.add_inventory(product, qty)
+                quantity = int(input("Quantity to add: ").strip())
+                client.add_inventory(product, quantity)
             except ValueError:
                 print("Invalid quantity")
         
-        elif choice == '2':
+        elif choice == "2":
             product = input("Product name: ").strip()
             if not product:
-                print("Product name cannot be empty")
+                print("Product name required")
                 continue
             try:
-                new_qty = int(input("New quantity: ").strip())
-                client.update_inventory(product, new_qty)
+                quantity = int(input("New total quantity: ").strip())
+                client.update_inventory(product, quantity)
             except ValueError:
                 print("Invalid quantity")
         
-        elif choice == '3':
-            client.get_inventory()
+        elif choice == "3":
+            client.view_inventory()
         
-        elif choice == '4':
-            print("\nGoodbye!")
+        elif choice == "4":
+            query = input("\nAsk a question about inventory: ").strip()
+            if query:
+                client.query_llm(query)
+            else:
+                print("Query cannot be empty")
+        
+        elif choice == "5":
+            print("\nGoodbye!\n")
             break
         
         else:
-            print("QInvalid choice")
+            print("Invalid choice (1-5)")
+
 
 if __name__ == '__main__':
     main()

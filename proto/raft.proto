@@ -3,14 +3,16 @@ syntax = "proto3";
 package raft;
 
 service RaftService {
-  // Leader election
+  // Raft consensus RPCs
   rpc RequestVote(VoteRequest) returns (VoteResponse);
-  
-  // Log replication
   rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
   
-  // Client request forwarding
-  rpc ForwardRequest(ForwardRequestMsg) returns (ForwardResponseMsg);
+  // Client-facing RPCs
+  rpc AddInventory(AddInventoryRequest) returns (AddInventoryResponse);
+  rpc UpdateInventory(UpdateInventoryRequest) returns (UpdateInventoryResponse);
+  rpc GetInventory(GetInventoryRequest) returns (GetInventoryResponse);
+  rpc GetLeaderInfo(GetLeaderRequest) returns (GetLeaderResponse);
+  rpc QueryLLM(QueryLLMRequest) returns (QueryLLMResponse);
 }
 
 message VoteRequest {
@@ -52,13 +54,64 @@ message AppendEntriesResponse {
   int32 matchIndex = 3;
 }
 
-message ForwardRequestMsg {
-  string type = 1;
-  string data = 2;
-  string token = 3;
+// Client-facing messages
+message AddInventoryRequest {
+  string username = 1;
+  string product = 2;
+  int32 quantity = 3;
+  string request_id = 4;
+  string timestamp = 5;
 }
 
-message ForwardResponseMsg {
-  string status = 1;
-  string result = 2;
+message AddInventoryResponse {
+  bool success = 1;
+  string message = 2;
+  string leader_hint = 3;
+}
+
+message UpdateInventoryRequest {
+  string username = 1;
+  string product = 2;
+  int32 quantity = 3;
+  string request_id = 4;
+  string timestamp = 5;
+}
+
+message UpdateInventoryResponse {
+  bool success = 1;
+  string message = 2;
+  string leader_hint = 3;
+}
+
+message GetInventoryRequest {
+}
+
+message InventoryItem {
+  string product = 1;
+  int32 quantity = 2;
+}
+
+message GetInventoryResponse {
+  repeated InventoryItem items = 1;
+}
+
+message GetLeaderRequest {
+}
+
+message GetLeaderResponse {
+  bool is_leader = 1;
+  string leader_address = 2;
+  int32 current_term = 3;
+}
+
+// LLM Query messages
+message QueryLLMRequest {
+  string query = 1;
+  string username = 2;
+}
+
+message QueryLLMResponse {
+  bool success = 1;
+  string response = 2;
+  string error = 3;
 }

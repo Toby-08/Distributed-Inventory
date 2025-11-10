@@ -44,10 +44,30 @@ class RaftServiceStub(object):
                 request_serializer=raft__pb2.AppendEntriesRequest.SerializeToString,
                 response_deserializer=raft__pb2.AppendEntriesResponse.FromString,
                 _registered_method=True)
-        self.ForwardRequest = channel.unary_unary(
-                '/raft.RaftService/ForwardRequest',
-                request_serializer=raft__pb2.ForwardRequestMsg.SerializeToString,
-                response_deserializer=raft__pb2.ForwardResponseMsg.FromString,
+        self.AddInventory = channel.unary_unary(
+                '/raft.RaftService/AddInventory',
+                request_serializer=raft__pb2.AddInventoryRequest.SerializeToString,
+                response_deserializer=raft__pb2.AddInventoryResponse.FromString,
+                _registered_method=True)
+        self.UpdateInventory = channel.unary_unary(
+                '/raft.RaftService/UpdateInventory',
+                request_serializer=raft__pb2.UpdateInventoryRequest.SerializeToString,
+                response_deserializer=raft__pb2.UpdateInventoryResponse.FromString,
+                _registered_method=True)
+        self.GetInventory = channel.unary_unary(
+                '/raft.RaftService/GetInventory',
+                request_serializer=raft__pb2.GetInventoryRequest.SerializeToString,
+                response_deserializer=raft__pb2.GetInventoryResponse.FromString,
+                _registered_method=True)
+        self.GetLeaderInfo = channel.unary_unary(
+                '/raft.RaftService/GetLeaderInfo',
+                request_serializer=raft__pb2.GetLeaderRequest.SerializeToString,
+                response_deserializer=raft__pb2.GetLeaderResponse.FromString,
+                _registered_method=True)
+        self.QueryLLM = channel.unary_unary(
+                '/raft.RaftService/QueryLLM',
+                request_serializer=raft__pb2.QueryLLMRequest.SerializeToString,
+                response_deserializer=raft__pb2.QueryLLMResponse.FromString,
                 _registered_method=True)
 
 
@@ -55,22 +75,45 @@ class RaftServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def RequestVote(self, request, context):
-        """Leader election
+        """Raft consensus RPCs
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def AppendEntries(self, request, context):
-        """Log replication
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddInventory(self, request, context):
+        """Client-facing RPCs
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def ForwardRequest(self, request, context):
-        """Client request forwarding
-        """
+    def UpdateInventory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetInventory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetLeaderInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def QueryLLM(self, request, context):
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -88,10 +131,30 @@ def add_RaftServiceServicer_to_server(servicer, server):
                     request_deserializer=raft__pb2.AppendEntriesRequest.FromString,
                     response_serializer=raft__pb2.AppendEntriesResponse.SerializeToString,
             ),
-            'ForwardRequest': grpc.unary_unary_rpc_method_handler(
-                    servicer.ForwardRequest,
-                    request_deserializer=raft__pb2.ForwardRequestMsg.FromString,
-                    response_serializer=raft__pb2.ForwardResponseMsg.SerializeToString,
+            'AddInventory': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddInventory,
+                    request_deserializer=raft__pb2.AddInventoryRequest.FromString,
+                    response_serializer=raft__pb2.AddInventoryResponse.SerializeToString,
+            ),
+            'UpdateInventory': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateInventory,
+                    request_deserializer=raft__pb2.UpdateInventoryRequest.FromString,
+                    response_serializer=raft__pb2.UpdateInventoryResponse.SerializeToString,
+            ),
+            'GetInventory': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetInventory,
+                    request_deserializer=raft__pb2.GetInventoryRequest.FromString,
+                    response_serializer=raft__pb2.GetInventoryResponse.SerializeToString,
+            ),
+            'GetLeaderInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLeaderInfo,
+                    request_deserializer=raft__pb2.GetLeaderRequest.FromString,
+                    response_serializer=raft__pb2.GetLeaderResponse.SerializeToString,
+            ),
+            'QueryLLM': grpc.unary_unary_rpc_method_handler(
+                    servicer.QueryLLM,
+                    request_deserializer=raft__pb2.QueryLLMRequest.FromString,
+                    response_serializer=raft__pb2.QueryLLMResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -159,7 +222,7 @@ class RaftService(object):
             _registered_method=True)
 
     @staticmethod
-    def ForwardRequest(request,
+    def AddInventory(request,
             target,
             options=(),
             channel_credentials=None,
@@ -172,9 +235,117 @@ class RaftService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/raft.RaftService/ForwardRequest',
-            raft__pb2.ForwardRequestMsg.SerializeToString,
-            raft__pb2.ForwardResponseMsg.FromString,
+            '/raft.RaftService/AddInventory',
+            raft__pb2.AddInventoryRequest.SerializeToString,
+            raft__pb2.AddInventoryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateInventory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/raft.RaftService/UpdateInventory',
+            raft__pb2.UpdateInventoryRequest.SerializeToString,
+            raft__pb2.UpdateInventoryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetInventory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/raft.RaftService/GetInventory',
+            raft__pb2.GetInventoryRequest.SerializeToString,
+            raft__pb2.GetInventoryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetLeaderInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/raft.RaftService/GetLeaderInfo',
+            raft__pb2.GetLeaderRequest.SerializeToString,
+            raft__pb2.GetLeaderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def QueryLLM(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/raft.RaftService/QueryLLM',
+            raft__pb2.QueryLLMRequest.SerializeToString,
+            raft__pb2.QueryLLMResponse.FromString,
             options,
             channel_credentials,
             insecure,

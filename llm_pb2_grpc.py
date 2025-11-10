@@ -44,8 +44,8 @@ class LLMServiceStub(object):
                 request_serializer=llm__pb2.AppendLogRequest.SerializeToString,
                 response_deserializer=llm__pb2.AppendLogResponse.FromString,
                 _registered_method=True)
-        self.QueryLLM = channel.unary_unary(
-                '/llm.LLMService/QueryLLM',
+        self.QueryInventory = channel.unary_unary(
+                '/llm.LLMService/QueryInventory',
                 request_serializer=llm__pb2.QueryRequest.SerializeToString,
                 response_deserializer=llm__pb2.QueryResponse.FromString,
                 _registered_method=True)
@@ -66,7 +66,7 @@ class LLMServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def QueryLLM(self, request, context):
+    def QueryInventory(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -85,8 +85,8 @@ def add_LLMServiceServicer_to_server(servicer, server):
                     request_deserializer=llm__pb2.AppendLogRequest.FromString,
                     response_serializer=llm__pb2.AppendLogResponse.SerializeToString,
             ),
-            'QueryLLM': grpc.unary_unary_rpc_method_handler(
-                    servicer.QueryLLM,
+            'QueryInventory': grpc.unary_unary_rpc_method_handler(
+                    servicer.QueryInventory,
                     request_deserializer=llm__pb2.QueryRequest.FromString,
                     response_serializer=llm__pb2.QueryResponse.SerializeToString,
             ),
@@ -156,7 +156,7 @@ class LLMService(object):
             _registered_method=True)
 
     @staticmethod
-    def QueryLLM(request,
+    def QueryInventory(request,
             target,
             options=(),
             channel_credentials=None,
@@ -169,7 +169,7 @@ class LLMService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/llm.LLMService/QueryLLM',
+            '/llm.LLMService/QueryInventory',
             llm__pb2.QueryRequest.SerializeToString,
             llm__pb2.QueryResponse.FromString,
             options,

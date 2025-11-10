@@ -1,126 +1,126 @@
 import grpc
 from concurrent import futures
-from datetime import datetime
-import json
-import os
-
 import llm_pb2
 import llm_pb2_grpc
+import json
+import os
+from datetime import datetime
 
-# Try to import anthropic, but allow server to run without it
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
-    print("  Warning: anthropic package not installed. LLM responses will be mocked.")
-    print("   Install with: pip install anthropic")
-
-class LLMService(llm_pb2_grpc.LLMServiceServicer):
+class LLMServicer(llm_pb2_grpc.LLMServiceServicer):
     def __init__(self):
-        # Get API key from environment variable (safer than hardcoding)
-        self.api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        
-        # Initialize client only if API key is available
-        self.client = None
-        if ANTHROPIC_AVAILABLE and self.api_key:
-            try:
-                self.client = anthropic.Anthropic(api_key=self.api_key)
-                print("[LLM]  Claude API initialized")
-            except Exception as e:
-                print(f"[LLM]   Failed to initialize Claude API: {e}")
-        else:
-            if not ANTHROPIC_AVAILABLE:
-                print("[LLM]   Running in MOCK mode (anthropic not installed)")
-            elif not self.api_key:
-                print("[LLM]   Running in MOCK mode (no API key found)")
-                print("[LLM]  Set ANTHROPIC_API_KEY environment variable to enable real LLM")
-        
         self.log_file = "llm_server/llm_context_log.jsonl"
-        self.logs = []  # In-memory log storage
+        self.logs = []
+        self.inventory = {}
         
-        self._ensure_log_file()
+        # Check for API key (optional)
+        self.api_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        self.use_real_llm = bool(self.api_key)
+        
+        if self.use_real_llm:
+            print(f"[LLM] Running with real LLM API")
+            # TODO: Initialize OpenAI/Anthropic client here
+            # self.llm_client = ...
+        else:
+            print(f"[LLM] Running in pattern-matching mode (no API key found)")
+        
+        # Load existing logs
         self._load_logs()
-    
-    def _ensure_log_file(self):
-        """Ensure log file exists"""
-        os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
-        if not os.path.exists(self.log_file):
-            with open(self.log_file, 'w') as f:
-                pass
+        print(f"[LLM] Loaded {len(self.logs)} log entries")
+        if self.inventory:
+            print(f"[LLM] Current inventory: {self.inventory}")
     
     def _load_logs(self):
-        """Load existing logs from disk"""
+        """Load logs from file"""
+        if not os.path.exists(self.log_file):
+            return
+        
         try:
-            if os.path.exists(self.log_file):
-                with open(self.log_file, 'r') as f:
-                    for line in f:
-                        if line.strip():
-                            entry = json.loads(line)
-                            self.logs.append(entry)
-                print(f"[LLM] Loaded {len(self.logs)} historical log entries")
+            with open(self.log_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        self.logs.append(entry)
+                        self._apply_to_inventory(entry)
+                    except json.JSONDecodeError:
+                        continue
         except Exception as e:
             print(f"[LLM] Error loading logs: {e}")
     
-    def _persist_log(self, log_entry: dict):
-        """Persist a single log entry to disk"""
+    def _apply_to_inventory(self, entry):
+        """Apply log entry to inventory"""
+        product = entry.get('product')
+        if not product:
+            return
+        
+        if entry['operation'] == 'add_inventory':
+            self.inventory[product] = self.inventory.get(product, 0) + entry.get('qty_change', 0)
+        elif entry['operation'] == 'update_inventory':
+            self.inventory[product] = entry.get('new_qty', 0)
+    
+    def _persist_log(self, entry):
+        """Persist log entry to file"""
         try:
-            with open(self.log_file, 'a') as f:
-                f.write(json.dumps(log_entry) + '\n')
+            os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(entry) + '\n')
+                f.flush()
         except Exception as e:
             print(f"[LLM] Error persisting log: {e}")
     
-    def _build_context(self) -> str:
-        """Build context string from all logs"""
-        if not self.logs:
-            return "No inventory operations yet."
-        
-        context_lines = ["Recent inventory operations:"]
-        # Take last 50 logs for context (to avoid token limits)
-        recent_logs = self.logs[-50:]
-        
-        for log in recent_logs:
-            op = log['operation']
-            product = log['product']
-            username = log.get('username', 'unknown')
-            timestamp = log.get('timestamp', '')
-            
-            if op == 'add_inventory':
-                qty = log.get('qty_change', 0)
-                context_lines.append(f"- {username} added {qty} units of {product} at {timestamp}")
-            elif op == 'update_inventory':
-                new_qty = log.get('new_qty', 0)
-                context_lines.append(f"- {username} updated {product} to {new_qty} units at {timestamp}")
-        
-        return "\n".join(context_lines)
-    
-    def _generate_mock_response(self, query: str, context: str) -> str:
-        """Generate a mock response when Claude API is not available"""
-        return f"""[MOCK LLM RESPONSE]
-
-Query: {query}
-
-Based on the context, here's a simulated response:
-- Total operations logged: {len(self.logs)}
-- Context provided: {len(context)} characters
-
-To enable real LLM responses:
-1. Install anthropic: pip install anthropic
-2. Set API key: set ANTHROPIC_API_KEY=your-key-here (Windows) or export ANTHROPIC_API_KEY=your-key-here (Linux/Mac)
-3. Restart LLM server
-
-Current context summary:
-{context[:500]}...
-"""
-    
-    # New: Bulk sync logs from leader
     def SyncLogs(self, request, context):
-        """Handle bulk log sync from Raft leader"""
-        print(f"[LLM] Receiving {len(request.logs)} logs from leader {request.leader_id} (term {request.term})")
+        """Sync all logs from leader"""
+        print(f"[LLM] Received sync request from {request.leader_id} with {len(request.logs)} logs")
         
-        synced_count = 0
-        for log_entry in request.logs:
-            # Store in context log
+        try:
+            # Clear existing data
+            self.logs = []
+            self.inventory = {}
+            
+            # Rewrite log file
+            if os.path.exists(self.log_file):
+                os.remove(self.log_file)
+            
+            # Apply all logs
+            for log_entry in request.logs:
+                entry = {
+                    'term': log_entry.term,
+                    'index': log_entry.index,
+                    'operation': log_entry.operation,
+                    'product': log_entry.product,
+                    'qty_change': log_entry.qty_change,
+                    'new_qty': log_entry.new_qty,
+                    'username': log_entry.username,
+                    'timestamp': log_entry.timestamp,
+                    'request_id': log_entry.request_id
+                }
+                
+                self.logs.append(entry)
+                self._apply_to_inventory(entry)
+                self._persist_log(entry)
+            
+            print(f"[LLM] Synced {len(self.logs)} logs. Inventory: {self.inventory}")
+            
+            return llm_pb2.SyncLogsResponse(
+                success=True,
+                logs_synced=len(request.logs),
+                message=f"Synced {len(request.logs)} logs"
+            )
+        
+        except Exception as e:
+            print(f"[LLM] Sync error: {e}")
+            return llm_pb2.SyncLogsResponse(
+                success=False,
+                logs_synced=0,
+                message=f"Error: {str(e)}"
+            )
+    
+    def AppendLog(self, request, context):
+        """Append a single log entry"""
+        try:
+            log_entry = request.log
             entry = {
                 'term': log_entry.term,
                 'index': log_entry.index,
@@ -133,133 +133,198 @@ Current context summary:
                 'request_id': log_entry.request_id
             }
             
-            # Check if already exists
-            if log_entry.index <= len(self.logs):
-                # Update existing
-                self.logs[log_entry.index - 1] = entry
-            else:
-                # Append new
-                self.logs.append(entry)
+            self.logs.append(entry)
+            self._apply_to_inventory(entry)
+            self._persist_log(entry)
             
-            # Persist to disk
-            with open('llm_server/llm_context_log.jsonl', 'a', encoding='utf-8') as f:
-                f.write(json.dumps(entry) + '\n')
+            print(f"[LLM] Appended log {entry['index']}: {entry['operation']} {entry['product']}")
             
-            synced_count += 1
+            return llm_pb2.AppendLogResponse(
+                success=True,
+                message="Log appended"
+            )
         
-        print(f"[LLM] Successfully synced {synced_count} logs from {request.leader_id}")
-        
-        return llm_pb2.SyncLogsResponse(
-            success=True,
-            logs_synced=synced_count,
-            message=f"Synced {synced_count} logs"
-        )
-    
-    # New: Append single log entry
-    def AppendLog(self, request, context):
-        """Append a single log entry from leader"""
-        try:
-            log_entry = {
-                'term': request.log.term,
-                'index': request.log.index,
-                'operation': request.log.operation,
-                'product': request.log.product,
-                'qty_change': request.log.qty_change,
-                'new_qty': request.log.new_qty,
-                'username': request.log.username,
-                'timestamp': request.log.timestamp,
-                'request_id': request.log.request_id
-            }
-            
-         
-            if not any(l['index'] == log_entry['index'] and l['term'] == log_entry['term'] for l in self.logs):
-                self.logs.append(log_entry)
-                self._persist_log(log_entry)
-                print(f"[LLM] Appended log entry: {log_entry['operation']} {log_entry['product']}")
-            
-            return llm_pb2.AppendLogResponse(success=True)
-            
         except Exception as e:
-            print(f"[LLM] Error appending log: {e}")
-            return llm_pb2.AppendLogResponse(success=False)
+            return llm_pb2.AppendLogResponse(
+                success=False,
+                message=f"Error: {str(e)}"
+            )
     
-    def GetResponse(self, request, context):
-        """Generate LLM response based on query and current context"""
+    def QueryInventory(self, request, context):
+        """Answer natural language queries about inventory"""
         try:
-            # Build context from logs
-            system_context = self._build_context()
+            query = request.query.lower().strip()
+            username = request.username
             
-            # Combine with user's additional context
-            full_context = f"{system_context}\n\nUser context: {request.context}" if request.context else system_context
+            print(f"[LLM] Query from {username}: {query}")
             
-            # Use Claude API if available, otherwise mock response
-            if self.client:
-                message = self.client.messages.create(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=1024,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": f"Context:\n{full_context}\n\nQuery: {request.query}"
-                        }
-                    ]
-                )
+            # Use real LLM if available, otherwise use pattern matching
+            if self.use_real_llm:
+                response = self._query_real_llm(query)
+            else:
+                response = self._process_query_pattern_matching(query)
+            
+            return llm_pb2.QueryResponse(
+                success=True,
+                response=response,
+                error=""
+            )
+        
+        except Exception as e:
+            print(f"[LLM] Query error: {e}")
+            return llm_pb2.QueryResponse(
+                success=False,
+                response="",
+                error=str(e)
+            )
+    
+    def _query_real_llm(self, query: str) -> str:
+        """Query real LLM API (OpenAI/Anthropic) - TODO: Implement"""
+        # This is a placeholder for future real LLM integration
+        # For now, fall back to pattern matching
+        print("[LLM] Real LLM not yet implemented, using pattern matching")
+        return self._process_query_pattern_matching(query)
+    
+    def _process_query_pattern_matching(self, query: str) -> str:
+        """Process natural language query using simple pattern matching"""
+        query_lower = query.lower()
+        
+        # List all inventory
+        if any(word in query_lower for word in ["list", "show all", "what do we have", "inventory", "everything"]):
+            if not self.inventory:
+                return "The inventory is currently empty."
+            
+            response = "Current Inventory:\n" + "="*40 + "\n"
+            for product, qty in sorted(self.inventory.items()):
+                response += f"  • {product}: {qty} units\n"
+            response += "="*40
+            return response
+        
+        # Check specific product
+        for product in self.inventory.keys():
+            if product.lower() in query_lower:
+                qty = self.inventory[product]
+                return f"{product}: {qty} units in stock"
+        
+        # Total items
+        if any(word in query_lower for word in ["total", "how many", "count"]):
+            total = sum(self.inventory.values())
+            num_products = len(self.inventory)
+            return f"Total: {total} units across {num_products} product{'s' if num_products != 1 else ''}"
+        
+        # Low stock (example: < 10 units)
+        if any(word in query_lower for word in ["low stock", "running low", "shortage", "need to order"]):
+            low_stock = {p: q for p, q in self.inventory.items() if q < 10}
+            if not low_stock:
+                return "No products are running low on stock (all products have ≥10 units)."
+            
+            response = "Low Stock Alert (< 10 units):\n" + "="*40 + "\n"
+            for product, qty in sorted(low_stock.items()):
+                response += f"  • {product}: {qty} units\n"
+            response += "="*40
+            return response
+        
+        # High stock
+        if any(word in query_lower for word in ["high stock", "most", "highest"]):
+            if not self.inventory:
+                return "No inventory data available."
+            
+            max_product = max(self.inventory.items(), key=lambda x: x[1])
+            return f"Highest stock: {max_product[0]} with {max_product[1]} units"
+        
+        # Recent changes
+        if any(word in query_lower for word in ["recent", "latest", "last", "history"]):
+            if not self.logs:
+                return "No recent activity recorded."
+            
+            recent = self.logs[-5:]  # Last 5 entries
+            response = "Recent Inventory Changes:\n" + "="*40 + "\n"
+            for entry in reversed(recent):
+                product = entry['product']
+                user = entry.get('username', 'unknown')
+                timestamp = entry.get('timestamp', '')
                 
-                response_text = message.content[0].text
-                print(f"[LLM] Generated Claude response for query: {request.query[:50]}...")
-            else:
-                # Mock response
-                response_text = self._generate_mock_response(request.query, full_context)
-                print(f"[LLM] Generated MOCK response for query: {request.query[:50]}...")
+                if entry['operation'] == 'add_inventory':
+                    change = entry.get('qty_change', 0)
+                    response += f" {user} added {change} {product}\n"
+                else:
+                    new_qty = entry.get('new_qty', 0)
+                    response += f"   {user} updated {product} to {new_qty}\n"
+                
+                if timestamp:
+                    response += f"      ({timestamp[:19]})\n"
+            response += "="*40
+            return response
+        
+        # Empty/zero stock
+        if any(word in query_lower for word in ["empty", "zero", "out of stock", "depleted"]):
+            empty = {p: q for p, q in self.inventory.items() if q == 0}
+            if not empty:
+                return "No products are out of stock."
             
-            return llm_pb2.LLMResponse(
-                response=response_text,
-                success=True
+            response = "Out of Stock:\n" + "="*40 + "\n"
+            for product in sorted(empty.keys()):
+                response += f"  • {product}: 0 units\n"
+            response += "="*40
+            return response
+        
+        # Help/Instructions
+        if any(word in query_lower for word in ["help", "what can you do", "commands"]):
+            return (
+                " AI Inventory Assistant - Available Queries:\n"
+                + "="*50 + "\n"
+                + " Inventory Info:\n"
+                + "  • 'Show all inventory' or 'List everything'\n"
+                + "  • 'How much [product] do we have?'\n"
+                + "  • 'What's the total?'\n\n"
+                + " Stock Alerts:\n"
+                + "  • 'What's running low?'\n"
+                + "  • 'Show out of stock items'\n"
+                + "  • 'Which product has the most stock?'\n\n"
+                + " Activity:\n"
+                + "  • 'Show recent changes'\n"
+                + "  • 'What's the latest activity?'\n"
+                + "="*50
             )
-            
-        except Exception as e:
-            error_msg = f"Error generating response: {str(e)}"
-            print(f"[LLM] Error generating response: {error_msg}")
-            return llm_pb2.LLMResponse(
-                response=error_msg,
-                success=False
-            )
-
+        
+        # Default response - summarize current state
+        total = sum(self.inventory.values())
+        num_products = len(self.inventory)
+        
+        return (
+            f" You asked: '{query}'\n\n"
+            f" Current Inventory Summary:\n"
+            + "="*40 + "\n"
+            f"  • Total products: {num_products}\n"
+            f"  • Total units: {total}\n\n"
+            f" Try asking:\n"
+            f"  • 'Show all inventory'\n"
+            f"  • 'How much [product] do we have?'\n"
+            f"  • 'What's running low?'\n"
+            f"  • 'Show recent changes'\n"
+            f"  • 'help' for more options\n"
+            + "="*40
+        )
 
 
 def serve():
-    """Start the LLM gRPC server"""
-    print("[LLM] Starting LLM Server...")
-    
-    # Check for API key
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
-    if not api_key:
-        print("[LLM] Running in MOCK mode (no API key found)")
-        print("[LLM] Set ANTHROPIC_API_KEY environment variable to enable real LLM")
-    else:
-        print("[LLM] API key found - Real LLM mode enabled")
-    
-    # Create service
-    llm_service = LLMService()
-    
-    # Create gRPC server
+    """Start LLM gRPC server"""
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    llm_pb2_grpc.add_LLMServiceServicer_to_server(LLMServicer(), server)
     
-    # CRITICAL: Register the service
-    llm_pb2_grpc.add_LLMServiceServicer_to_server(llm_service, server)
-    
-    # Bind to port
-    server.add_insecure_port('0.0.0.0:50054')
+    port = "50054"
+    server.add_insecure_port(f"[::]:{port}")
     server.start()
     
-    print(f"[LLM] Server running on port 50054...")
-    print(f"[LLM] Ready to receive log sync from Raft leader")
+    print(f"[LLM] Server started on port {port}")
+    print("[LLM] Ready to receive queries and log syncs")
     
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
-        print("\n[LLM] Shutting down gracefully...")
+        print("\n[LLM] Shutting down...")
         server.stop(0)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     serve()

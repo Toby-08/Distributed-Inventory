@@ -2,15 +2,17 @@ import grpc
 import time
 import raft_pb2
 import raft_pb2_grpc
+import llm_pb2
+import llm_pb2_grpc
 from server_app_leader.raft_node import NodeState
 
 class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
     def __init__(self, raft_node):
-        self.node = raft_node
+        self.raft_node = raft_node
     
     def RequestVote(self, request, context):
         """Handle RequestVote RPC"""
-        node = self.node
+        node = self.raft_node
         
         with node.state_lock:
             print(f"[{node.node_id}] Received vote request from {request.candidateId} for term {request.term}")
@@ -54,7 +56,7 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
     
     def AppendEntries(self, request, context):
         """Handle AppendEntries RPC (heartbeats and log replication)"""
-        node = self.node
+        node = self.raft_node
         
         with node.state_lock:
             # Reject old terms
@@ -73,7 +75,7 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
                 print(f"[{node.node_id}] Reverted to FOLLOWER for term {request.term}")
             node.state = NodeState.FOLLOWER
             
-            #  Reset election timer!
+            # Reset election timer
             node.last_heartbeat = time.time()
             
             # Handle heartbeats (empty entries)
@@ -86,23 +88,23 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
                 
                 # Log every 50th heartbeat (~5 seconds at 100ms interval)
                 if node._heartbeat_count % 50 == 0:
-                    print(f"[{node.node_id}]  Heartbeat from {request.leaderId} (term {request.term}, count={node._heartbeat_count})")
+                    print(f"[{node.node_id}] Heartbeat from {request.leaderId} (term {request.term}, count={node._heartbeat_count})")
                 
                 return raft_pb2.AppendEntriesResponse(term=node.current_term, success=True)
             
             # Log replication (for actual entries) - always log these
-            print(f"[{node.node_id}]  Received {len(request.entries)} entries from {request.leaderId}")
+            print(f"[{node.node_id}] Received {len(request.entries)} entries from {request.leaderId}")
             
             # Check log consistency
             if request.prevLogIndex > 0:
                 if request.prevLogIndex > len(node.log):
                     # Missing entries
-                    print(f"[{node.node_id}]  Missing entries (prevLogIndex={request.prevLogIndex}, log length={len(node.log)})")
+                    print(f"[{node.node_id}] Missing entries (prevLogIndex={request.prevLogIndex}, log length={len(node.log)})")
                     return raft_pb2.AppendEntriesResponse(term=node.current_term, success=False)
                 
                 if node.log[request.prevLogIndex - 1]['term'] != request.prevLogTerm:
                     # Log conflict - delete conflicting entries
-                    print(f"[{node.node_id}]  Log conflict at index {request.prevLogIndex}")
+                    print(f"[{node.node_id}] Log conflict at index {request.prevLogIndex}")
                     node.log = node.log[:request.prevLogIndex - 1]
                     return raft_pb2.AppendEntriesResponse(term=node.current_term, success=False)
             
@@ -132,10 +134,226 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
                     node.log.append(entry)
                     node._persist_log_entry(entry)
                     node._apply_loaded(entry)
-                    print(f"[{node.node_id}]  Applied log {entry['index']}: {entry['operation']} {entry['product']}")
+                    print(f"[{node.node_id}] Applied log {entry['index']}: {entry['operation']} {entry['product']}")
             
             # Update commit index
             if request.leaderCommit > node.commit_index:
                 node.commit_index = min(request.leaderCommit, len(node.log))
             
             return raft_pb2.AppendEntriesResponse(term=node.current_term, success=True)
+    
+    def AddInventory(self, request, context):
+        """Handle client add inventory request"""
+        # Check if this node is the leader
+        if self.raft_node.state != NodeState.LEADER:
+            leader_addr = self.raft_node.get_leader_address()
+            return raft_pb2.AddInventoryResponse(
+                success=False,
+                message="Not the leader",
+                leader_hint=leader_addr or ""
+            )
+        
+        try:
+            # Check for duplicate (idempotency)
+            for existing in self.raft_node.log:
+                if existing.get('request_id') == request.request_id:
+                    print(f"[{self.raft_node.node_id}] Duplicate request {request.request_id}, returning success")
+                    return raft_pb2.AddInventoryResponse(
+                        success=True,
+                        message=f"Added {request.quantity} {request.product} (idempotent)"
+                    )
+            
+            # Create log entry
+            entry = {
+                'term': self.raft_node.current_term,
+                'index': len(self.raft_node.log) + 1,
+                'operation': 'add_inventory',
+                'product': request.product,
+                'qty_change': request.quantity,
+                'new_qty': request.quantity,
+                'username': request.username,
+                'timestamp': request.timestamp,
+                'request_id': request.request_id
+            }
+            
+            # Append to log
+            self.raft_node.log.append(entry)
+            self.raft_node._persist_log_entry(entry)
+            
+            # Apply to state machine
+            self.raft_node._apply_loaded(entry)
+            
+            print(f"[{self.raft_node.node_id}] Appended log {entry['index']}: {request.product} +{request.quantity}")
+            
+            # TRIGGER IMMEDIATE REPLICATION
+            import threading
+            threading.Thread(target=self.raft_node._send_heartbeats, daemon=True).start()
+            
+            # SEND TO LLM (if available)
+            if self.raft_node.llm_available:
+                threading.Thread(target=self.raft_node._send_log_to_llm, args=(entry,), daemon=True).start()
+            
+            return raft_pb2.AddInventoryResponse(
+                success=True,
+                message=f"Added {request.quantity} {request.product}"
+            )
+            
+        except Exception as e:
+            print(f"[{self.raft_node.node_id}] AddInventory error: {e}")
+            import traceback
+            traceback.print_exc()
+            return raft_pb2.AddInventoryResponse(
+                success=False,
+                message=f"Internal error: {str(e)}"
+            )
+    
+    def UpdateInventory(self, request, context):
+        """Handle client update inventory request"""
+        # Check if this node is the leader
+        if self.raft_node.state != NodeState.LEADER:
+            leader_addr = self.raft_node.get_leader_address()
+            return raft_pb2.UpdateInventoryResponse(
+                success=False,
+                message="Not the leader",
+                leader_hint=leader_addr or ""
+            )
+        
+        try:
+            # Check for duplicate (idempotency)
+            for existing in self.raft_node.log:
+                if existing.get('request_id') == request.request_id:
+                    print(f"[{self.raft_node.node_id}] Duplicate request {request.request_id}, returning success")
+                    return raft_pb2.UpdateInventoryResponse(
+                        success=True,
+                        message=f"Updated {request.product} to {request.quantity} (idempotent)"
+                    )
+            
+            # Create log entry
+            entry = {
+                'term': self.raft_node.current_term,
+                'index': len(self.raft_node.log) + 1,
+                'operation': 'update_inventory',
+                'product': request.product,
+                'qty_change': 0,  # Not used for updates
+                'new_qty': request.quantity,
+                'username': request.username,
+                'timestamp': request.timestamp,
+                'request_id': request.request_id
+            }
+            
+            # Append to log
+            self.raft_node.log.append(entry)
+            self.raft_node._persist_log_entry(entry)
+            
+            # Apply to state machine
+            self.raft_node._apply_loaded(entry)
+            
+            print(f"[{self.raft_node.node_id}] Appended log {entry['index']}: {request.product} = {request.quantity}")
+            
+            # TRIGGER IMMEDIATE REPLICATION (same as AddInventory)
+            import threading
+            threading.Thread(target=self.raft_node._send_heartbeats, daemon=True).start()
+            
+            # SEND TO LLM (if available)
+            if self.raft_node.llm_available:
+                threading.Thread(target=self.raft_node._send_log_to_llm, args=(entry,), daemon=True).start()
+            
+            return raft_pb2.UpdateInventoryResponse(
+                success=True,
+                message=f"Updated {request.product} to {request.quantity}"
+            )
+        
+        except Exception as e:
+            print(f"[{self.raft_node.node_id}] UpdateInventory error: {e}")
+            import traceback
+            traceback.print_exc()
+            return raft_pb2.UpdateInventoryResponse(
+                success=False,
+                message=f"Internal error: {str(e)}"
+            )
+    
+    def GetInventory(self, request, context):
+        """Return current inventory state"""
+        try:
+            # Build inventory from log
+            inventory = {}
+            for entry in self.raft_node.log:
+                product = entry.get('product')
+                if not product:
+                    continue
+                
+                if entry['operation'] == 'add_inventory':
+                    inventory[product] = inventory.get(product, 0) + entry.get('qty_change', 0)
+                elif entry['operation'] == 'update_inventory':
+                    inventory[product] = entry.get('new_qty', 0)
+            
+            # Convert to protobuf
+            items = [
+                raft_pb2.InventoryItem(product=k, quantity=v)
+                for k, v in inventory.items()
+            ]
+            
+            return raft_pb2.GetInventoryResponse(items=items)
+            
+        except Exception as e:
+            print(f"[{self.raft_node.node_id}] GetInventory error: {e}")
+            return raft_pb2.GetInventoryResponse(items=[])
+    
+    def GetLeaderInfo(self, request, context):
+        """Return leader information"""
+        is_leader = (self.raft_node.state == NodeState.LEADER)
+        leader_addr = self.raft_node.get_leader_address() if not is_leader else ""
+        
+        return raft_pb2.GetLeaderResponse(
+            is_leader=is_leader,
+            leader_address=leader_addr,
+            current_term=self.raft_node.current_term
+        )
+    
+    def QueryLLM(self, request, context):
+        """Forward query to LLM server"""
+        try:
+            # Connect to LLM server
+            channel = grpc.insecure_channel(self.raft_node.llm_server_address)
+            
+            # Test connection
+            try:
+                grpc.channel_ready_future(channel).result(timeout=2.0)
+            except grpc.FutureTimeoutError:
+                return raft_pb2.QueryLLMResponse(
+                    success=False,
+                    response="",
+                    error="LLM server is unavailable"
+                )
+            
+            stub = llm_pb2_grpc.LLMServiceStub(channel)
+            
+            # Forward query to LLM
+            llm_response = stub.QueryInventory(
+                llm_pb2.QueryRequest(
+                    query=request.query,
+                    username=request.username
+                ),
+                timeout=10.0
+            )
+            
+            channel.close()
+            
+            return raft_pb2.QueryLLMResponse(
+                success=llm_response.success,
+                response=llm_response.response,
+                error=llm_response.error
+            )
+            
+        except grpc.RpcError as e:
+            return raft_pb2.QueryLLMResponse(
+                success=False,
+                response="",
+                error=f"LLM RPC error: {e.code()}"
+            )
+        except Exception as e:
+            return raft_pb2.QueryLLMResponse(
+                success=False,
+                response="",
+                error=f"Error: {str(e)}"
+            )

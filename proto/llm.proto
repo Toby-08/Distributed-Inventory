@@ -5,7 +5,7 @@ package llm;
 service LLMService {
   rpc SyncLogs(SyncLogsRequest) returns (SyncLogsResponse);
   rpc AppendLog(AppendLogRequest) returns (AppendLogResponse);
-  rpc QueryLLM(QueryRequest) returns (QueryResponse);
+  rpc QueryInventory(QueryRequest) returns (QueryResponse);
 }
 
 message SyncLogsRequest {
@@ -47,9 +47,7 @@ message QueryRequest {
 }
 
 message QueryResponse {
-  string response = 1;
-  bool needs_approval = 2;
-  string operation = 3;
-  string product = 4;
-  int32 quantity = 5;
+  bool success = 1;
+  string response = 2;
+  string error = 3;
 }
