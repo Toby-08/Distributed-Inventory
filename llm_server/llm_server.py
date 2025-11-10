@@ -13,7 +13,7 @@ try:
     ANTHROPIC_AVAILABLE = True
 except ImportError:
     ANTHROPIC_AVAILABLE = False
-    print("⚠️  Warning: anthropic package not installed. LLM responses will be mocked.")
+    print("  Warning: anthropic package not installed. LLM responses will be mocked.")
     print("   Install with: pip install anthropic")
 
 class LLMService(llm_pb2_grpc.LLMServiceServicer):
@@ -26,15 +26,15 @@ class LLMService(llm_pb2_grpc.LLMServiceServicer):
         if ANTHROPIC_AVAILABLE and self.api_key:
             try:
                 self.client = anthropic.Anthropic(api_key=self.api_key)
-                print("[LLM] ✅ Claude API initialized")
+                print("[LLM]  Claude API initialized")
             except Exception as e:
-                print(f"[LLM] ⚠️  Failed to initialize Claude API: {e}")
+                print(f"[LLM]   Failed to initialize Claude API: {e}")
         else:
             if not ANTHROPIC_AVAILABLE:
-                print("[LLM] ⚠️  Running in MOCK mode (anthropic not installed)")
+                print("[LLM]   Running in MOCK mode (anthropic not installed)")
             elif not self.api_key:
-                print("[LLM] ⚠️  Running in MOCK mode (no API key found)")
-                print("[LLM] ℹ️  Set ANTHROPIC_API_KEY environment variable to enable real LLM")
+                print("[LLM]   Running in MOCK mode (no API key found)")
+                print("[LLM]  Set ANTHROPIC_API_KEY environment variable to enable real LLM")
         
         self.log_file = "llm_server/llm_context_log.jsonl"
         self.logs = []  # In-memory log storage
@@ -113,7 +113,7 @@ Current context summary:
 {context[:500]}...
 """
     
-    # ✅ New: Bulk sync logs from leader
+    # New: Bulk sync logs from leader
     def SyncLogs(self, request, context):
         """Handle bulk log sync from Raft leader"""
         print(f"[LLM] Receiving {len(request.logs)} logs from leader {request.leader_id} (term {request.term})")
@@ -155,7 +155,7 @@ Current context summary:
             message=f"Synced {synced_count} logs"
         )
     
-    # ✅ New: Append single log entry
+    # New: Append single log entry
     def AppendLog(self, request, context):
         """Append a single log entry from leader"""
         try:
@@ -245,7 +245,7 @@ def serve():
     # Create gRPC server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     
-    # ⭐ CRITICAL: Register the service
+    # CRITICAL: Register the service
     llm_pb2_grpc.add_LLMServiceServicer_to_server(llm_service, server)
     
     # Bind to port
