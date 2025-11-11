@@ -67,7 +67,7 @@ View screenshots:
   - feature-grpc-auth
   - feature-raft-logic
   - feature-llm
-- Current sprint: Raft
-  - Route new updates to: feature-raft-logic
+- Current sprint: UI
+  - Route new updates to: feature-UI
 
 ---
