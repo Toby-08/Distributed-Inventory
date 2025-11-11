@@ -184,7 +184,7 @@ class RaftClient:
         """View current inventory with leader redirection"""
         for attempt in range(self.max_retries):
             try:
-                stub = self._get_stub()
+                stub, channel = self._get_stub()
                 if not stub:
                     return
                 
@@ -192,6 +192,8 @@ class RaftClient:
                     raft_pb2.GetInventoryRequest(),
                     timeout=self.request_timeout
                 )
+
+                channel.close()
                 
                 if not response.items:
                     print("\n[INFO] Inventory is empty")
@@ -286,7 +288,7 @@ def main():
     
     print(f"\nStarting Raft client as: {username}\n")
     
-    # ✅ Get servers from environment or use defaults
+    # Get servers from environment or use defaults
     servers_env = os.getenv("RAFT_SERVERS", "")
     if servers_env:
         initial_servers = [s.strip() for s in servers_env.split(",")]
@@ -296,8 +298,6 @@ def main():
             "127.0.0.1:50052",
             "127.0.0.1:50053"
         ]
-    
-    print(f"Connecting to servers: {initial_servers}\n")
     
     client = RaftClient(initial_servers, username, password)
     
