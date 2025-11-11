@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy proto files and generate code
+COPY proto/ ./proto/
+RUN python -m grpc_tools.protoc -I=proto --python_out=. --grpc_python_out=. proto/raft.proto
+
+# Copy client code
+COPY client/ ./client/
+
+# Environment variables
+ENV RAFT_SERVERS="raft-leader:50051,raft-follower1:50052,raft-follower2:50053"
+
+# Run interactive client
+CMD ["python", "-u", "-m", "client.client_raft"]

@@ -1,0 +1,147 @@
+
+services:
+  # =====================================
+  # LLM Server - AI Query Service
+  # =====================================
+  llm:
+    environment:
+      - PYTHONUNBUFFERED=1
+    build:
+      context: .
+      dockerfile: Dockerfile.llm
+    container_name: llm-server
+    ports:
+      - "50054:50054"
+    volumes:
+      - llm-data:/app/llm_server
+    networks:
+      - raft-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50054'); grpc.channel_ready_future(channel).result(timeout=1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  # =====================================
+  # Raft Leader Node
+  # =====================================
+  raft-leader:
+    build:
+      context: .
+      dockerfile: Dockerfile.raft
+    container_name: raft-leader
+    environment:
+      - NODE_ID=leader
+      - NODE_PORT=50051
+      - PEERS=raft-follower1:50052,raft-follower2:50053
+      - LLM_SERVER=llm:50054
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "50051:50051"
+    volumes:
+      - leader-data:/app/server_data/leader
+    networks:
+      - raft-network
+    depends_on:
+      llm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50051'); grpc.channel_ready_future(channel).result(timeout=1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # =====================================
+  # Raft Follower 1
+  # =====================================
+  raft-follower1:
+    build:
+      context: .
+      dockerfile: Dockerfile.raft
+    container_name: raft-follower1
+    environment:
+      - NODE_ID=follower1
+      - NODE_PORT=50052
+      - PEERS=raft-leader:50051,raft-follower2:50053
+      - LLM_SERVER=llm:50054
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "50052:50052"
+    volumes:
+      - follower1-data:/app/server_data/follower1
+    networks:
+      - raft-network
+    depends_on:
+      llm:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =====================================
+  # Raft Follower 2
+  # =====================================
+  raft-follower2:
+    build:
+      context: .
+      dockerfile: Dockerfile.raft
+    container_name: raft-follower2
+    environment:
+      - NODE_ID=follower2
+      - NODE_PORT=50053
+      - PEERS=raft-leader:50051,raft-follower1:50052
+      - LLM_SERVER=llm:50054
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "50053:50053"
+    volumes:
+      - follower2-data:/app/server_data/follower2
+    networks:
+      - raft-network
+    depends_on:
+      llm:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =====================================
+  # CLI Client (Optional - for testing)
+  # =====================================
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: raft-client
+    environment:
+      - RAFT_SERVERS=raft-leader:50051,raft-follower1:50052,raft-follower2:50053
+    networks:
+      - raft-network
+    depends_on:
+      - raft-leader
+      - raft-follower1
+      - raft-follower2
+    stdin_open: true
+    tty: true
+    profiles:
+      - client  # Only start when explicitly requested
+
+# =====================================
+# Networks
+# =====================================
+networks:
+  raft-network:
+    driver: bridge
+
+# =====================================
+# Persistent Volumes
+# =====================================
+volumes:
+  llm-data:
+    driver: local
+  leader-data:
+    driver: local
+  follower1-data:
+    driver: local
+  follower2-data:
+    driver: local
