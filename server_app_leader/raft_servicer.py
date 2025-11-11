@@ -15,67 +15,70 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
         node = self.raft_node
         
         with node.state_lock:
-            print(f"[{node.node_id}] Received vote request from {request.candidateId} for term {request.term}")
+            print(f"[{node.node_id}] Received vote request from {request.candidateId} for term {request.term} (our term: {node.current_term}, voted_for: {node.voted_for})")
             
-            # Reject if term < currentTerm
+            #Reject if term < currentTerm
             if request.term < node.current_term:
                 print(f"[{node.node_id}] Rejected vote for {request.candidateId} (old term {request.term} < {node.current_term})")
                 return raft_pb2.VoteResponse(term=node.current_term, voteGranted=False)
             
-            # Update term if higher
+            # Update term if higher AND RESET voted_for
             if request.term > node.current_term:
-                print(f"[{node.node_id}] Reverted to FOLLOWER for term {request.term}")
+                print(f"[{node.node_id}] Updating term from {node.current_term} to {request.term} and RESETTING voted_for")
                 node.current_term = request.term
                 node.state = NodeState.FOLLOWER
-                node.voted_for = None
+                node.voted_for = None  # MUST RESET - allows voting in new term
                 node._persist_state()
+        
+        # Grant vote if conditions met
+        vote_granted = False
+        
+        # Can vote if: (1) haven't voted OR (2) already voted for this candidate
+        if (node.voted_for is None or node.voted_for == request.candidateId):
+            # Check log up-to-date
+            last_log_index = len(node.log)
+            last_log_term = node.log[-1]['term'] if node.log else 0
             
-            # Grant vote if conditions met
-            vote_granted = False
+            log_ok = (request.lastLogTerm > last_log_term or 
+                     (request.lastLogTerm == last_log_term and request.lastLogIndex >= last_log_index))
             
-            if (node.voted_for is None or node.voted_for == request.candidateId):
-                # Check log up-to-date
-                last_log_index = len(node.log)
-                last_log_term = node.log[-1]['term'] if node.log else 0
-                
-                log_ok = (request.lastLogTerm > last_log_term or 
-                         (request.lastLogTerm == last_log_term and request.lastLogIndex >= last_log_index))
-                
-                if log_ok:
-                    vote_granted = True
-                    node.voted_for = request.candidateId
-                    node.last_heartbeat = time.time()  # Reset election timer
-                    node._persist_state()
-                    print(f"[{node.node_id}] Voted for {request.candidateId} in term {request.term}")
-                else:
-                    print(f"[{node.node_id}] Rejected vote (log not up-to-date)")
+            if log_ok:
+                vote_granted = True
+                node.voted_for = request.candidateId
+                node.last_heartbeat = time.time()  # Reset election timer
+                node._persist_state()
+                print(f"[{node.node_id}] GRANTED vote to {request.candidateId} in term {request.term}")
             else:
-                print(f"[{node.node_id}] Rejected vote (already voted for {node.voted_for})")
-            
-            return raft_pb2.VoteResponse(term=node.current_term, voteGranted=vote_granted)
+                print(f"[{node.node_id}] REJECTED vote (log not up-to-date: candidate=[term={request.lastLogTerm}, idx={request.lastLogIndex}], ours=[term={last_log_term}, idx={last_log_index}])")
+        else:
+            print(f"[{node.node_id}] REJECTED vote (already voted for {node.voted_for} in term {node.current_term})")
+        
+        return raft_pb2.VoteResponse(term=node.current_term, voteGranted=vote_granted)
     
     def AppendEntries(self, request, context):
         """Handle AppendEntries RPC (heartbeats and log replication)"""
         node = self.raft_node
         
         with node.state_lock:
-            # Reject old terms
+            # Reject old terms and tell sender about current term
             if request.term < node.current_term:
+                # Old leader trying to send heartbeats - tell them the current term
+                print(f"[{node.node_id}] Rejected AppendEntries from {request.leaderId} (old term {request.term} < {node.current_term})")
                 return raft_pb2.AppendEntriesResponse(term=node.current_term, success=False)
             
             # Update term if higher
             if request.term > node.current_term:
-                print(f"[{node.node_id}] Reverted to FOLLOWER for term {request.term}")
+                print(f"[{node.node_id}] Updating term from {node.current_term} to {request.term}")
                 node.current_term = request.term
                 node.voted_for = None
                 node._persist_state()
             
             # Always step down to follower when receiving valid AppendEntries
             if node.state != NodeState.FOLLOWER:
-                print(f"[{node.node_id}] Reverted to FOLLOWER for term {request.term}")
+                print(f"[{node.node_id}] Stepping down to FOLLOWER (received AppendEntries from {request.leaderId})")
             node.state = NodeState.FOLLOWER
             
-            # Reset election timer
+            # Reset election timer - we have a valid leader
             node.last_heartbeat = time.time()
             
             # Handle heartbeats (empty entries)
@@ -311,47 +314,67 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
         )
     
     def QueryLLM(self, request, context):
-        """Forward query to LLM server"""
+        """Forward inventory-related AI query to the LLM server (leader-only)."""
         try:
-            # Connect to LLM server
-            channel = grpc.insecure_channel(self.raft_node.llm_server_address)
-            
-            # Test connection
-            try:
-                grpc.channel_ready_future(channel).result(timeout=2.0)
-            except grpc.FutureTimeoutError:
+            # 🧠 Ensure only leader processes LLM queries
+            if not self.raft_node.is_leader:
+                leader_hint = self.raft_node.leader_id or ""
+                print(f"[RAFT] ⚠️ Node {self.raft_node.node_id} received QueryLLM but is not leader. Redirecting to {leader_hint}")
                 return raft_pb2.QueryLLMResponse(
                     success=False,
                     response="",
-                    error="LLM server is unavailable"
+                    error="Not leader. Please redirect.",
                 )
-            
+
+            # 🎯 Connect to LLM gRPC server (e.g. localhost:50054)
+            llm_addr = getattr(self.raft_node, "llm_server_address", "127.0.0.1:50054")
+            print(f"[RAFT] Forwarding QueryLLM to LLM server at {llm_addr}")
+
+            channel = grpc.insecure_channel(llm_addr)
+
+            # 🔍 Test connection first (2s timeout)
+            try:
+                grpc.channel_ready_future(channel).result(timeout=2.0)
+            except grpc.FutureTimeoutError:
+                print("[RAFT] ❌ LLM server unavailable.")
+                return raft_pb2.QueryLLMResponse(
+                    success=False,
+                    response="",
+                    error="LLM server unavailable."
+                )
+
             stub = llm_pb2_grpc.LLMServiceStub(channel)
-            
-            # Forward query to LLM
+
+            # 🚀 Forward the query to LLM (20s timeout to handle Gemini delay)
             llm_response = stub.QueryInventory(
                 llm_pb2.QueryRequest(
                     query=request.query,
-                    username=request.username
+                    username=request.username,
+                    request_id=request.request_id
                 ),
-                timeout=10.0
+                timeout=20.0
             )
-            
+
             channel.close()
-            
+
+            print(f"[RAFT] ✅ Received response from LLM (len={len(llm_response.response)} chars)")
+
+            # 🔁 Relay back to client
             return raft_pb2.QueryLLMResponse(
                 success=llm_response.success,
                 response=llm_response.response,
                 error=llm_response.error
             )
-            
+
         except grpc.RpcError as e:
+            print(f"[RAFT] ❌ LLM gRPC error: {e.code()}")
             return raft_pb2.QueryLLMResponse(
                 success=False,
                 response="",
                 error=f"LLM RPC error: {e.code()}"
             )
         except Exception as e:
+            print(f"[RAFT] ❌ LLM forwarding error: {e}")
             return raft_pb2.QueryLLMResponse(
                 success=False,
                 response="",

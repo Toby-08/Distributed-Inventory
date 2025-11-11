@@ -44,6 +44,7 @@ message AppendLogResponse {
 message QueryRequest {
   string query = 1;
   string username = 2;
+  string request_id = 3;
 }
 
 message QueryResponse {

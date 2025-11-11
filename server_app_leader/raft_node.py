@@ -25,6 +25,7 @@ class RaftNode:
         self.peers = peers
         self.port = port
         self.llm_server_address = llm_server_address
+        self.leader_id = None
 
         # Storage paths - EACH NODE MUST HAVE ITS OWN DIRECTORY
         self.data_dir = os.path.join("server_data", self.node_id)
@@ -88,8 +89,15 @@ class RaftNode:
         self.failed_elections = 0
     
     def _random_election_timeout(self) -> float:
-        """Base jitter; we add backoff separately"""
-        return random.uniform(0.30, 0.60)
+        """Random election timeout with backoff on failures"""
+        base_timeout = random.uniform(1.5, 3.0)  
+        
+        # Add backoff based on failed elections
+        if hasattr(self, 'failed_elections'):
+            backoff = min(self.failed_elections * 0.5, 3.0)  # Max 3s backoff
+            base_timeout += backoff
+    
+        return base_timeout
     
     def _load_state(self):
         """Load current_term and voted_for from state.json."""
@@ -233,6 +241,8 @@ class RaftNode:
     def _become_leader(self):
         print(f"[{self.node_id}] *** Became LEADER for term {self.current_term}")
         self.state = NodeState.LEADER
+        self.failed_elections = 0  # Reset failed election counter
+        
         for peer in self.peers:
             self.next_index[peer] = len(self.log) + 1
             self.match_index[peer] = 0
@@ -271,6 +281,8 @@ class RaftNode:
             with self.state_lock:
                 self.last_llm_synced_term = self.current_term
                 self.last_llm_synced_index = len(self.log)
+        
+        print(f"[{self.node_id}] LLM re-sync completed at index {self.last_llm_synced_index}")
 
     def _sync_logs_to_llm(self) -> bool:
         """Bulk sync all logs to LLM server. Returns True if successful."""
@@ -317,7 +329,7 @@ class RaftNode:
                 leader_id=self.node_id,
                 term=self.current_term,
                 logs=log_entries
-            ), timeout=5.0)
+            ), timeout=15.0)
             
             channel.close()
             
@@ -381,7 +393,7 @@ class RaftNode:
             stub.AppendLog(llm_pb2.AppendLogRequest(
                 log=log_entry,
                 leader_id=self.node_id
-            ), timeout=1.0)
+            ), timeout=3.0)
             
             channel.close()
             print(f"[{self.node_id}] LLM received log {entry['index']}")
@@ -437,43 +449,77 @@ class RaftNode:
 
     def _start_election(self):
         """Start a new election"""
-        print(f"[{self.node_id}] STARTING ELECTION")
         with self.state_lock:
-            self.state = NodeState.CANDIDATE
+            # Only start election if we're a follower/candidate and haven't received recent heartbeat
+            current_time = time.time()
+            
+            # Don't start election if we recently received a heartbeat from a valid leader
+            if current_time - self.last_heartbeat < self.election_timeout:
+                return
+            
+            # Increment term and become candidate
             self.current_term += 1
-            self.voted_for = self.node_id
-            self.last_heartbeat = time.time()
+            self.state = NodeState.CANDIDATE
+            self.voted_for = self.node_id  # Vote for self
+            self._persist_state()
+            
+            # Reset election timeout with jitter to prevent split votes
             self.election_timeout = self._random_election_timeout()
-
+            self.last_heartbeat = current_time  # Reset timer
+            
             current_term = self.current_term
-            peers = list(self.peers)
-            majority_needed = self._calculate_majority()
-
-        votes = 1
-        for peer in peers:
-            print(f"[{self.node_id}] Requesting vote from {peer}...")
-            if self._request_vote(peer, current_term):
-                votes += 1
-                print(f"[{self.node_id}] Received vote from {peer} ({votes}/{majority_needed})")
-            else:
-                print(f"[{self.node_id}] Did NOT receive vote from {peer}")
-
+            votes_received = 1  # Vote for self
+            votes_needed = self._calculate_majority()
+            
+            print(f"[{self.node_id}] STARTING ELECTION for term {current_term}")
+        
+        # Collect votes from peers
+        vote_results = []
+        
+        # Request votes from all peers in parallel
+        for peer in self.peers:
+            thread = threading.Thread(
+                target=lambda p: vote_results.append((p, self._request_vote_sync(p, current_term))),
+                args=(peer,),
+                daemon=True
+            )
+            thread.start()
+        
+        # Wait for vote responses (with timeout)
+        time.sleep(1.0)  # Wait up to 1 second for votes
+        
+        # Count votes
         with self.state_lock:
-            print(f"[{self.node_id}] Final vote count: {votes}/{majority_needed}")
-            if self.state == NodeState.CANDIDATE and votes >= majority_needed:
-                print(f"[{self.node_id}] WON ELECTION!")
-                self.failed_elections = 0
+            # Check if we're still a candidate in the same term
+            if self.state != NodeState.CANDIDATE or self.current_term != current_term:
+                print(f"[{self.node_id}] Election aborted (state/term changed)")
+                return
+            
+            # Count granted votes
+            for peer, vote_granted in vote_results:
+                if vote_granted:
+                    votes_received += 1
+                    print(f"[{self.node_id}] Received vote from {peer} ({votes_received}/{votes_needed})")
+            
+            # Check if we won
+            if votes_received >= votes_needed:
+                print(f"[{self.node_id}] WON ELECTION with {votes_received}/{votes_needed} votes!")
                 self._become_leader()
+                return
+            
+            # Election failed
+            # Check if we've received a heartbeat from a leader in the meantime
+            if time.time() - self.last_heartbeat < 1.0:
+                print(f"[{self.node_id}] Election failed, but valid leader exists. Stepping down.")
+                self.state = NodeState.FOLLOWER
             else:
-                print(f"[{self.node_id}] Lost election")
-                self.failed_elections = min(self.failed_elections + 1, 10)
-                # Exponential-ish backoff to avoid term churn
-                self.election_timeout = self._random_election_timeout() * (1.5 + 0.5 * self.failed_elections)
+                print(f"[{self.node_id}] Election failed with {votes_received}/{votes_needed} votes")
+                # Revert to follower to retry on next timeout
+                self.state = NodeState.FOLLOWER
 
-    def _request_vote(self, peer: str, term: int) -> bool:
-        """Request vote from a peer"""
+    def _request_vote_sync(self, peer: str, term: int) -> bool:
+        """Synchronous vote request (for use in threads)"""
         try:
-            print(f"[{self.node_id}] Connecting to {peer}...")
             channel = grpc.insecure_channel(peer)
             stub = raft_pb2_grpc.RaftServiceStub(channel)
             
@@ -481,7 +527,6 @@ class RaftNode:
                 last_log_index = len(self.log)
                 last_log_term = self.log[-1]['term'] if self.log else 0
             
-            print(f"[{self.node_id}] Sending vote request to {peer}...")
             request = raft_pb2.VoteRequest(
                 term=term,
                 candidateId=self.node_id,
@@ -489,30 +534,27 @@ class RaftNode:
                 lastLogTerm=last_log_term
             )
             
-            response = stub.RequestVote(request, timeout=1.0)
-            print(f"[{self.node_id}] Got response from {peer}: voteGranted={response.voteGranted}")
+            response = stub.RequestVote(request, timeout=0.5)
+            
+            channel.close()
             
             # Mark peer alive on successful response
             self._mark_peer_alive(peer)
             
             with self.state_lock:
+                # If we discover higher term, step down
                 if response.term > self.current_term:
+                    print(f"[{self.node_id}] Discovered higher term {response.term} from {peer}, stepping down")
                     self._revert_to_follower(response.term)
                     return False
-            
-            channel.close()
+        
             return response.voteGranted
         
         except grpc.RpcError as e:
-            print(f"[{self.node_id}] RPC Error from {peer}: {e.code()} - {e.details()}")
-            # Mark dead if beyond threshold
-            with self.state_lock:
-                last_seen = self.peer_last_seen.get(peer, time.time())
-                if time.time() - last_seen > self.dead_peer_threshold:
-                    self._mark_peer_dead(peer)
+            print(f"[{self.node_id}] RPC error from {peer}: {e.code()}")
             return False
         except Exception as e:
-            print(f"[{self.node_id}] Exception requesting vote from {peer}: {type(e).__name__}: {e}")
+            print(f"[{self.node_id}] Error requesting vote from {peer}: {e}")
             return False
 
     def _bulk_sync_llm_if_needed(self):
@@ -635,11 +677,19 @@ class RaftNode:
         return None  # Could track last known leader here
 
     def _revert_to_follower(self, new_term: int):
+        """Step down to follower state"""
         with self.state_lock:
+            old_term = self.current_term
+            old_state = self.state
+        
             self.state = NodeState.FOLLOWER
             self.current_term = new_term
-            self.voted_for = None
+            self.voted_for = None  # Reset vote for new term
+            self.last_heartbeat = time.time()  # Reset election timer
             self._persist_state()
+        
+        if old_state != NodeState.FOLLOWER or old_term != new_term:
+            print(f"[{self.node_id}] Stepped down to FOLLOWER (term {old_term} → {new_term})")
 
     def _heartbeat_timer(self):
         """Periodically send heartbeats/log replication when leader."""
@@ -698,7 +748,6 @@ class RaftNode:
                 # Get entries to replicate (from next_index onwards)
                 entries_to_send = []
                 if next_idx <= len(self.log):
-                    # Convert log entries to protobuf
                     for entry in self.log[next_idx - 1:]:
                         entries_to_send.append(raft_pb2.LogEntry(
                             term=entry['term'],
@@ -712,7 +761,7 @@ class RaftNode:
                             request_id=entry.get('request_id', '')
                         ))
         
-            # Build request
+        # Build request
             request = raft_pb2.AppendEntriesRequest(
                 term=term,
                 leaderId=self.node_id,
@@ -721,9 +770,12 @@ class RaftNode:
                 entries=entries_to_send,
                 leaderCommit=commit_index
             )
-        
+            
             # Send RPC
             response = stub.AppendEntries(request, timeout=0.5)
+            
+            # ✅ ADD THIS: Mark peer alive on successful RPC
+            self._mark_peer_alive(peer)
             
             # Handle response
             with self.state_lock:
@@ -777,11 +829,11 @@ class RaftNode:
                         # Use simple linear decrement for first few conflicts
                         self.next_index[peer] = max(1, self.next_index[peer] - 1)
                         print(f"[{self.node_id}] Log inconsistency with {peer}, decrementing next_index to {self.next_index[peer]}")
-            
-            channel.close()
+                
+                channel.close()
         
         except grpc.RpcError as e:
-            # Handle errors
+            # ❌ Failed RPC - don't mark alive
             if not hasattr(self, '_heartbeat_errors'):
                 self._heartbeat_errors = {}
             
@@ -790,7 +842,6 @@ class RaftNode:
             
             self._heartbeat_errors[peer] += 1
             
-            # Only log first few errors
             if self._heartbeat_errors[peer] <= 3:
                 print(f"[{self.node_id}] Failed to send to {peer}: {e.code()}")
             
@@ -929,3 +980,26 @@ class RaftNode:
         result = last_matching + 1
         print(f"[{self.node_id}] Binary search result: start replication at index {result}")
         return result
+
+    def _run_election_timer(self):
+        """Background thread that triggers elections on timeout"""
+        while self.running:
+            time.sleep(0.1)  # Check every 100ms
+            
+            with self.state_lock:
+         
+                if self.state == NodeState.LEADER:
+                    continue
+                
+                current_time = time.time()
+                time_since_heartbeat = current_time - self.last_heartbeat
+                
+                # Random election timeout to prevent split votes
+                if time_since_heartbeat > self.election_timeout:
+                    # Double-check we haven't received a heartbeat just now
+                    if current_time - self.last_heartbeat > self.election_timeout:
+                        print(f"[{self.node_id}] Election timeout! Starting election...")
+                        threading.Thread(target=self._start_election, daemon=True).start()
+                        
+                        # Reset last_heartbeat to prevent immediate re-trigger
+                        self.last_heartbeat = current_time

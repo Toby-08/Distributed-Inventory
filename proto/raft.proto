@@ -108,6 +108,7 @@ message GetLeaderResponse {
 message QueryLLMRequest {
   string query = 1;
   string username = 2;
+  string request_id = 3;
 }
 
 message QueryLLMResponse {

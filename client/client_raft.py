@@ -212,54 +212,71 @@ class RaftClient:
         return False
     
     def query_llm(self, query):
-        """Query LLM about inventory"""
+        """Send a query to the LLM through the current Raft leader only."""
+        request_id = str(uuid.uuid4())  # ✅ Unique ID per query
+
         for attempt in range(1, self.max_retries + 1):
             try:
-                if attempt > 1:
-                    print(f"Retrying query (attempt {attempt}/{self.max_retries})...")
-                
-                # Try each server (query can go to any node)
-                for server_addr in self.servers:
-                    try:
-                        channel = grpc.insecure_channel(server_addr)
-                        stub = raft_pb2_grpc.RaftServiceStub(channel)
-                        
-                        response = stub.QueryLLM(
-                            raft_pb2.QueryLLMRequest(
-                                query=query,
-                                username=self.username
-                            ),
-                            timeout=self.request_timeout
-                        )
-                        
-                        channel.close()
-                        
-                        if response.success:
-                            print("\n" + "="*50)
-                            print("AI Response:")
-                            print("="*50)
-                            print(response.response)
-                            print("="*50 + "\n")
-                            return True
-                        else:
-                            if attempt == self.max_retries:
-                                print(f"Query failed: {response.error}")
+                # Always ensure we’re talking to the leader
+                if not self.current_leader or attempt > 1:
+                    print(f"Finding leader (attempt {attempt})...")
+                    self._find_leader()
+
+                if not self.current_leader:
+                    print("No leader found — cannot query LLM.")
+                    continue
+
+                channel = grpc.insecure_channel(self.current_leader)
+                stub = raft_pb2_grpc.RaftServiceStub(channel)
+
+                # ✅ Send query only to leader
+                response = stub.QueryLLM(
+                    raft_pb2.QueryLLMRequest(
+                        query=query,
+                        username=self.username,
+                        request_id=request_id   # ✅ Add unique ID here
+                    ),
+                    timeout=60.0
+                )
+
+                channel.close()
+
+                if response.success:
+                    print("\n" + "=" * 50)
+                    print("🤖 AI Response (from leader):")
+                    print("=" * 50)
+                    print(response.response)
+                    print("=" * 50 + "\n")
+                    return True
+
+                else:
+                    # If leader redirects
+                    if "not leader" in response.error.lower() or "redirect" in response.error.lower():
+                        if hasattr(response, "leader_hint") and response.leader_hint:
+                            print(f"Redirecting to leader: {response.leader_hint}")
+                            self.current_leader = response.leader_hint
                             continue
-                    
-                    except grpc.RpcError:
+                        print("Leader not found in response — rediscovering.")
+                        self._find_leader()
                         continue
-                
+
+                print(f"Query failed: {response.error}")
+                return False
+
+            except grpc.RpcError as e:
+                print(f"[gRPC] Error while querying LLM: {e.code()}")
+                self.current_leader = None  # Force re-discovery
                 if attempt < self.max_retries:
                     time.sleep(1)
-                    
+                    continue
+
             except Exception as e:
                 print(f"Error: {type(e).__name__}: {e}")
                 if attempt < self.max_retries:
                     time.sleep(1)
-        
-        print("Could not reach any server for query")
-        return False
 
+        print("❌ Could not reach leader for query after multiple attempts.")
+        return False
 
 def main():
     import os
