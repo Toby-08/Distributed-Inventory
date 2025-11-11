@@ -13,47 +13,48 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
     def RequestVote(self, request, context):
         """Handle RequestVote RPC"""
         node = self.raft_node
-        
+
         with node.state_lock:
-            print(f"[{node.node_id}] Received vote request from {request.candidateId} for term {request.term} (our term: {node.current_term}, voted_for: {node.voted_for})")
-            
-            #Reject if term < currentTerm
+            print(f"[{node.node_id}] RequestVote from {request.candidateId} term={request.term} (our term={node.current_term}, voted_for={node.voted_for})")
+
+            # 1) Term checks
             if request.term < node.current_term:
-                print(f"[{node.node_id}] Rejected vote for {request.candidateId} (old term {request.term} < {node.current_term})")
+                print(f"[{node.node_id}] Reject vote (old term {request.term} < {node.current_term})")
                 return raft_pb2.VoteResponse(term=node.current_term, voteGranted=False)
-            
-            # Update term if higher AND RESET voted_for
+
             if request.term > node.current_term:
-                print(f"[{node.node_id}] Updating term from {node.current_term} to {request.term} and RESETTING voted_for")
+                print(f"[{node.node_id}] Updating term {node.current_term} to {request.term}, reset voted_for")
                 node.current_term = request.term
                 node.state = NodeState.FOLLOWER
-                node.voted_for = None  # MUST RESET - allows voting in new term
+                node.voted_for = None
                 node._persist_state()
-        
-        # Grant vote if conditions met
-        vote_granted = False
-        
-        # Can vote if: (1) haven't voted OR (2) already voted for this candidate
-        if (node.voted_for is None or node.voted_for == request.candidateId):
-            # Check log up-to-date
-            last_log_index = len(node.log)
-            last_log_term = node.log[-1]['term'] if node.log else 0
-            
-            log_ok = (request.lastLogTerm > last_log_term or 
-                     (request.lastLogTerm == last_log_term and request.lastLogIndex >= last_log_index))
-            
-            if log_ok:
-                vote_granted = True
-                node.voted_for = request.candidateId
-                node.last_heartbeat = time.time()  # Reset election timer
-                node._persist_state()
-                print(f"[{node.node_id}] GRANTED vote to {request.candidateId} in term {request.term}")
-            else:
-                print(f"[{node.node_id}] REJECTED vote (log not up-to-date: candidate=[term={request.lastLogTerm}, idx={request.lastLogIndex}], ours=[term={last_log_term}, idx={last_log_index}])")
-        else:
-            print(f"[{node.node_id}] REJECTED vote (already voted for {node.voted_for} in term {node.current_term})")
-        
-        return raft_pb2.VoteResponse(term=node.current_term, voteGranted=vote_granted)
+
+            # 2) Already voted for someone else in this term?
+            if node.voted_for is not None and node.voted_for != request.candidateId:
+                print(f"[{node.node_id}] Reject vote (already voted for {node.voted_for} in term {node.current_term})")
+                return raft_pb2.VoteResponse(term=node.current_term, voteGranted=False)
+
+            # 3) Log up-to-date check (Raft §5.4.1)
+            our_last_index = len(node.log)
+            our_last_term = node.log[-1]['term'] if node.log else 0
+
+            up_to_date = (
+                request.lastLogTerm > our_last_term or
+                (request.lastLogTerm == our_last_term and request.lastLogIndex >= our_last_index)
+            )
+            if not up_to_date:
+                print(f"[{node.node_id}] Reject vote (candidate log not up-to-date: "
+                      f"cand=[term={request.lastLogTerm}, idx={request.lastLogIndex}] "
+                      f"ours=[term={our_last_term}, idx={our_last_index}])")
+                return raft_pb2.VoteResponse(term=node.current_term, voteGranted=False)
+
+            # 4) Grant vote
+            node.voted_for = request.candidateId
+            node.last_heartbeat = time.time()  # reset election timer
+            node.state = NodeState.FOLLOWER
+            node._persist_state()
+            print(f"[{node.node_id}] GRANTED vote to {request.candidateId} in term {request.term}")
+            return raft_pb2.VoteResponse(term=node.current_term, voteGranted=True)
     
     def AppendEntries(self, request, context):
         """Handle AppendEntries RPC (heartbeats and log replication)"""
@@ -276,31 +277,28 @@ class RaftServicer(raft_pb2_grpc.RaftServiceServicer):
             )
     
     def GetInventory(self, request, context):
-        """Return current inventory state"""
-        try:
-            # Build inventory from log
-            inventory = {}
-            for entry in self.raft_node.log:
-                product = entry.get('product')
-                if not product:
-                    continue
-                
-                if entry['operation'] == 'add_inventory':
-                    inventory[product] = inventory.get(product, 0) + entry.get('qty_change', 0)
-                elif entry['operation'] == 'update_inventory':
-                    inventory[product] = entry.get('new_qty', 0)
+        """Return current inventory"""
+        node = self.raft_node
+        
+        # Only leaders should respond (or followers redirect)
+        with node.state_lock:
+            if node.state != NodeState.LEADER:
+                # I'm not the leader, reject the request
+                context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+                context.set_details("Not the leader")
+                return raft_pb2.GetInventoryResponse()
             
-            # Convert to protobuf
-            items = [
-                raft_pb2.InventoryItem(product=k, quantity=v)
-                for k, v in inventory.items()
-            ]
+            # Return inventory from committed logs only
+            inventory_items = []
+            for product, quantity in node.inventory.items():
+                inventory_items.append(raft_pb2.InventoryItem(
+                    product=product,
+                    quantity=quantity
+                ))
             
-            return raft_pb2.GetInventoryResponse(items=items)
+            print(f"[{node.node_id}] GetInventory returning {len(inventory_items)} items: {node.inventory}")
             
-        except Exception as e:
-            print(f"[{self.raft_node.node_id}] GetInventory error: {e}")
-            return raft_pb2.GetInventoryResponse(items=[])
+            return raft_pb2.GetInventoryResponse(items=inventory_items)
     
     def GetLeaderInfo(self, request, context):
         """Return leader information"""

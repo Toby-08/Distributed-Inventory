@@ -181,34 +181,50 @@ class RaftClient:
         return False
     
     def view_inventory(self):
-        """View current inventory from any server"""
-        for server_addr in self.servers:
+        """View current inventory with leader redirection"""
+        for attempt in range(self.max_retries):
             try:
-                channel = grpc.insecure_channel(server_addr)
-                stub = raft_pb2_grpc.RaftServiceStub(channel)
+                stub = self._get_stub()
+                if not stub:
+                    return
                 
                 response = stub.GetInventory(
                     raft_pb2.GetInventoryRequest(),
-                    timeout=2.0
+                    timeout=self.request_timeout
                 )
                 
-                channel.close()
+                if not response.items:
+                    print("\n[INFO] Inventory is empty")
+                    return
                 
-                print("\n" + "="*40)
+                print("\n" + "=" * 40)
                 print("Current Inventory")
-                print("="*40)
-                if response.items:
-                    for item in response.items:
-                        print(f"  {item.product:20s} : {item.quantity:>5d} units")
+                print("=" * 40)
+                for item in response.items:
+                    print(f"  {item.product:20} : {item.quantity:5} units")
+                print("=" * 40)
+                return
+            
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                    # Not the leader, find new leader
+                    # print(f"Server is not the leader, finding current leader...")
+                    if self._find_leader():
+                        continue  # Retry with new leader
+                    else:
+                        print("Could not find leader")
+                        return
+                elif e.code() == grpc.StatusCode.UNAVAILABLE:
+                    print(f"Leader unavailable on attempt {attempt + 1}")
+                    if attempt < self.max_retries - 1:
+                        print(f"Retrying (attempt {attempt + 2}/{self.max_retries})...")
+                        self._find_leader()
+                        time.sleep(0.5)
                 else:
-                    print("  (empty)")
-                print("="*40 + "\n")
-                return True
-                
-            except Exception:
-                continue
-        
-        print("Could not retrieve inventory from any server")
+                    print(f"Error: {e.details()}")
+                    return
+    
+        print("Failed to get inventory after multiple attempts")
         return False
     
     def query_llm(self, query):
@@ -268,13 +284,20 @@ def main():
     username = input("Username: ").strip() or "admin"
     password = input("Password: ").strip() or "admin123"
     
-    print(f"\nStarting client as: {username}\n")
+    print(f"\nStarting Raft client as: {username}\n")
     
-    initial_servers = [
-        "127.0.0.1:50051",
-        "127.0.0.1:50052",
-        "127.0.0.1:50053"
-    ]
+    # ✅ Get servers from environment or use defaults
+    servers_env = os.getenv("RAFT_SERVERS", "")
+    if servers_env:
+        initial_servers = [s.strip() for s in servers_env.split(",")]
+    else:
+        initial_servers = [
+            "127.0.0.1:50051",
+            "127.0.0.1:50052",
+            "127.0.0.1:50053"
+        ]
+    
+    print(f"Connecting to servers: {initial_servers}\n")
     
     client = RaftClient(initial_servers, username, password)
     
