@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy proto files and generate code
+COPY proto/ ./proto/
+RUN python -m grpc_tools.protoc -I=proto --python_out=. --grpc_python_out=. proto/llm.proto
+
+# Copy LLM server code
+COPY llm_server/ ./llm_server/
+
+# Create data directory
+RUN mkdir -p /app/llm_server
+
+# Expose gRPC port
+EXPOSE 50054
+
+# Run the LLM server
+CMD ["python", "-u", "-m", "llm_server.llm_server"]
