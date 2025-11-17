@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Distributed Inventory</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <h2>Distributed Inventory</h2>
+            <div class="nav-links">
+                <a href="login.html?type=admin">Admin</a>
+                <a href="login.html?type=customer">Customer</a>
+                <button onclick="logout()" class="btn-link">Logout</button>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <h1 class="page-title">Admin Dashboard</h1>
+        
+        <div class="dashboard-cards">
+            <!-- Left Card: Inventory -->
+            <div class="admin-card">
+                <h2>Inventory</h2>
+                <div class="inventory-table-container">
+                    <table class="inventory-table">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Quantity</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-table-body">
+                            <tr>
+                                <td colspan="2" style="text-align: center; padding: 2rem;">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <a href="ai-analysis.html" class="btn btn-primary btn-gradient btn-block" style="margin-top: 1.5rem;">AI Analysis</a>
+            </div>
+            
+            <!-- Right Card: Actions -->
+            <div class="admin-card">
+                <h2>Actions</h2>
+                
+                <!-- Add Inventory Section -->
+                <div class="action-section">
+                    <h3>Add Inventory</h3>
+                    <form id="addForm">
+                        <div class="form-group">
+                            <label for="addProduct">Product</label>
+                            <input type="text" id="addProduct" placeholder="Apples" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addQuantity">Qty (+)</label>
+                            <input type="number" id="addQuantity" min="1" value="1" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-gradient btn-block">Add Inventory</button>
+                    </form>
+                </div>
+                
+                <!-- Update Quantity Section -->
+                <div class="action-section" style="margin-top: 2rem;">
+                    <h3>Update Quantity</h3>
+                    <form id="updateForm">
+                        <div class="form-group">
+                            <label for="updateProduct">Product</label>
+                            <input type="text" id="updateProduct" placeholder="Apples" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="updateQuantity">New Qty</label>
+                            <input type="number" id="updateQuantity" min="0" value="0" required>
+                        </div>
+                        <button type="submit" class="btn btn-secondary btn-block">Update Quantity</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <footer class="footer">
+        <p>© 2025 Distributed Inventory</p>
+    </footer>
+    
+    <script src="app.js"></script>
+    <script>
+        // Check authentication
+        const token = localStorage.getItem('token');
+        const userType = localStorage.getItem('user_type');
+        
+        if (!token || userType !== 'admin') {
+            window.location.href = 'login.html?type=admin';
+        }
+        
+        // Load inventory on page load
+        loadInventory();
+        
+        // Add inventory form
+        document.getElementById('addForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const product = document.getElementById('addProduct').value.trim();
+            const quantity = parseInt(document.getElementById('addQuantity').value);
+            
+            if (!product) {
+                alert('Product name is required');
+                return;
+            }
+            
+            const result = await addInventory(product, quantity);
+            if (result.success) {
+                alert(result.message);
+                document.getElementById('addProduct').value = '';
+                document.getElementById('addQuantity').value = '1';
+                loadInventory();
+            } else {
+                alert('Error: ' + result.message);
+            }
+        });
+        
+        // Update inventory form
+        document.getElementById('updateForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const product = document.getElementById('updateProduct').value.trim();
+            const quantity = parseInt(document.getElementById('updateQuantity').value);
+            
+            if (!product) {
+                alert('Product name is required');
+                return;
+            }
+            
+            const result = await updateInventory(product, quantity);
+            if (result.success) {
+                alert(result.message);
+                document.getElementById('updateProduct').value = '';
+                document.getElementById('updateQuantity').value = '0';
+                loadInventory();
+            } else {
+                alert('Error: ' + result.message);
+            }
+        });
+        
+        
+        function logout() {
+            localStorage.clear();
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>
+

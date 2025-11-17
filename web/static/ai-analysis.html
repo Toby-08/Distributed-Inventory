@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Analysis - Distributed Inventory</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <h2>Distributed Inventory</h2>
+            <div class="nav-links">
+                <a href="#" id="back-link" class="back-button">← Back</a>
+                <a href="login.html?type=admin">Admin</a>
+                <a href="login.html?type=customer">Customer</a>
+                <button onclick="logout()" class="btn-link">Logout</button>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="ai-dashboard">
+            <!-- Left Panel: Inventory Distribution -->
+            <div class="ai-panel">
+                <h2>Inventory Distribution</h2>
+                <div class="chart-container">
+                    <canvas id="pieChart"></canvas>
+                </div>
+                <div id="chart-legend" class="chart-legend"></div>
+            </div>
+            
+            <!-- Middle Panel: Prediction Analysis -->
+            <div class="ai-panel">
+                <h2>Prediction Analysis</h2>
+                <div id="prediction-content" class="prediction-content">
+                    <div class="loading">Loading analysis...</div>
+                </div>
+            </div>
+            
+            <!-- Right Panel: Ask AI -->
+            <div class="ai-panel">
+                <h2>Ask AI</h2>
+                <form id="aiForm">
+                    <div class="form-group">
+                        <label for="aiQuery">Question</label>
+                        <input type="text" id="aiQuery" placeholder="What are low-stock items?" value="What are low-stock items?">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-gradient btn-block">Ask</button>
+                </form>
+                <div id="ai-response" class="ai-response"></div>
+            </div>
+        </div>
+    </div>
+    
+    <footer class="footer">
+        <p>© 2025 Distributed Inventory</p>
+    </footer>
+    
+    <script src="app.js"></script>
+    <script>
+        // Check authentication
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = 'index.html';
+        }
+        
+        // Set back button link based on user type
+        const userType = localStorage.getItem('user_type');
+        const backLink = document.getElementById('back-link');
+        if (userType === 'admin') {
+            backLink.href = 'admin.html';
+        } else {
+            backLink.href = 'customer.html';
+        }
+        
+        let pieChart = null;
+        
+        // Load inventory and render
+        loadInventoryAndRender();
+        
+        // AI query form
+        document.getElementById('aiForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = document.getElementById('aiQuery').value;
+            await queryAIAndDisplay(query);
+        });
+        
+        async function loadInventoryAndRender() {
+            const data = await getInventory();
+            if (data.success) {
+                renderPieChart(data.items);
+                renderPredictionAnalysis(data.items);
+            }
+        }
+        
+        function renderPieChart(items) {
+            const ctx = document.getElementById('pieChart').getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (pieChart) {
+                pieChart.destroy();
+            }
+            
+            const labels = items.map(item => item.product);
+            const quantities = items.map(item => item.quantity);
+            const total = quantities.reduce((sum, qty) => sum + qty, 0);
+            
+            // Enhanced color palette with gradients
+            const colorPalette = [
+                { bg: 'rgba(59, 130, 246, 0.9)', border: 'rgba(59, 130, 246, 1)', hover: 'rgba(59, 130, 246, 1)' },   // Blue
+                { bg: 'rgba(168, 85, 247, 0.9)', border: 'rgba(168, 85, 247, 1)', hover: 'rgba(168, 85, 247, 1)' },   // Purple
+                { bg: 'rgba(236, 72, 153, 0.9)', border: 'rgba(236, 72, 153, 1)', hover: 'rgba(236, 72, 153, 1)' },   // Pink
+                { bg: 'rgba(34, 197, 94, 0.9)', border: 'rgba(34, 197, 94, 1)', hover: 'rgba(34, 197, 94, 1)' },     // Green
+                { bg: 'rgba(251, 146, 60, 0.9)', border: 'rgba(251, 146, 60, 1)', hover: 'rgba(251, 146, 60, 1)' },   // Orange
+                { bg: 'rgba(99, 102, 241, 0.9)', border: 'rgba(99, 102, 241, 1)', hover: 'rgba(99, 102, 241, 1)' },   // Indigo
+                { bg: 'rgba(239, 68, 68, 0.9)', border: 'rgba(239, 68, 68, 1)', hover: 'rgba(239, 68, 68, 1)' },     // Red
+                { bg: 'rgba(14, 165, 233, 0.9)', border: 'rgba(14, 165, 233, 1)', hover: 'rgba(14, 165, 233, 1)' },   // Sky Blue
+            ];
+            
+            const colors = items.map((_, index) => colorPalette[index % colorPalette.length]);
+            
+            pieChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: quantities,
+                        backgroundColor: colors.map(c => c.bg),
+                        borderColor: colors.map(c => c.border),
+                        borderWidth: 3,
+                        hoverBorderWidth: 5,
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        animateRotate: true,
+                        animateScale: true,
+                        duration: 1500,
+                        easing: 'easeOutQuart'
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            enabled: true,
+                            backgroundColor: 'rgba(30, 27, 75, 0.95)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: 'rgba(139, 92, 246, 0.5)',
+                            borderWidth: 2,
+                            padding: 12,
+                            displayColors: true,
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed || 0;
+                                    const percentage = ((value / total) * 100).toFixed(1);
+                                    return `${label}: ${value} units (${percentage}%)`;
+                                },
+                                title: function(context) {
+                                    return '📦 ' + context[0].label;
+                                }
+                            }
+                        }
+                    },
+                    cutout: '60%',
+                    interaction: {
+                        intersect: false,
+                        mode: 'nearest'
+                    }
+                }
+            });
+            
+            // Create enhanced custom legend
+            const legendDiv = document.getElementById('chart-legend');
+            legendDiv.innerHTML = items.map((item, index) => {
+                const percentage = ((item.quantity / total) * 100).toFixed(1);
+                const color = colors[index % colors.length];
+                return `
+                    <div class="legend-item" data-index="${index}" style="cursor: pointer;">
+                        <span class="legend-color" style="background: ${color.bg}; border: 2px solid ${color.border}; box-shadow: 0 2px 8px ${color.bg}40;"></span>
+                        <span class="legend-text">
+                            <strong>${item.product}</strong>
+                            <span class="legend-stats">${item.quantity} units (${percentage}%)</span>
+                        </span>
+                    </div>
+                `;
+            }).join('');
+            
+            // Add hover effects to legend items
+            legendDiv.querySelectorAll('.legend-item').forEach((item, index) => {
+                item.addEventListener('mouseenter', () => {
+                    if (pieChart) {
+                        pieChart.setActiveElements([{ datasetIndex: 0, index: index }]);
+                        pieChart.update('active');
+                    }
+                });
+                item.addEventListener('mouseleave', () => {
+                    if (pieChart) {
+                        pieChart.setActiveElements([]);
+                        pieChart.update();
+                    }
+                });
+            });
+        }
+        
+        function renderPredictionAnalysis(items) {
+            const totalItems = items.length;
+            const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+            const averagePerItem = totalItems > 0 ? Math.round(totalQuantity / totalItems) : 0;
+            
+            // Find low stock items (below average)
+            const lowStockItems = items.filter(item => item.quantity < averagePerItem);
+            const highStockItems = items.filter(item => item.quantity >= averagePerItem * 1.5);
+            
+            // Calculate balance score (variance-based)
+            const quantities = items.map(item => item.quantity);
+            const mean = averagePerItem;
+            const variance = quantities.reduce((sum, qty) => sum + Math.pow(qty - mean, 2), 0) / totalItems;
+            const stdDev = Math.sqrt(variance);
+            const balanceScore = Math.max(0, Math.min(100, Math.round(100 - (stdDev / mean) * 100)));
+            
+            const contentDiv = document.getElementById('prediction-content');
+            contentDiv.innerHTML = `
+                <div class="analysis-section">
+                    <h3>Stock Status</h3>
+                    <div class="status-item">
+                        <span>Total Items: <strong>${totalItems}</strong></span>
+                    </div>
+                    <div class="status-item">
+                        <span>Total Quantity: <strong>${totalQuantity} units</strong></span>
+                    </div>
+                    <div class="status-item">
+                        <span>Average per Item: <strong>${averagePerItem} units</strong></span>
+                    </div>
+                </div>
+                
+                ${lowStockItems.length > 0 ? `
+                <div class="analysis-section">
+                    <h3>▲ Low Stock Alert</h3>
+                    ${lowStockItems.map(item => `
+                        <div class="alert-item">
+                            <span class="alert-icon">▲</span>
+                            <span>${item.product}: ${item.quantity} units (Recommended: ${averagePerItem}+)</span>
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
+                
+                ${highStockItems.length > 0 ? `
+                <div class="analysis-section">
+                    <h3>✔ High Stock Items</h3>
+                    ${highStockItems.map(item => `
+                        <div class="status-item">
+                            <span class="check-icon">✔</span>
+                            <span>${item.product}: ${item.quantity} units</span>
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
+                
+                <div class="analysis-section">
+                    <h3>Inventory Balance</h3>
+                    <div class="status-item">
+                        <span class="balance-icon">⚖</span>
+                        <span>Balance Score: <strong>${balanceScore}%</strong></span>
+                    </div>
+                    ${balanceScore < 50 ? `
+                    <div class="alert-item">
+                        <span class="alert-icon">▲</span>
+                        <span>High variance detected. Consider rebalancing inventory.</span>
+                    </div>
+                    ` : ''}
+                </div>
+                
+                <div class="analysis-section">
+                    <h3>Forecast</h3>
+                    ${lowStockItems.length > 1 ? `
+                    <div class="alert-item">
+                        <span class="alert-icon">▲</span>
+                        <span>Multiple items are low. Consider bulk restocking soon.</span>
+                    </div>
+                    ` : lowStockItems.length === 1 ? `
+                    <div class="status-item">
+                        <span class="forecast-icon">☁</span>
+                        <span>One item needs restocking.</span>
+                    </div>
+                    ` : `
+                    <div class="status-item">
+                        <span class="forecast-icon">☀</span>
+                        <span>Inventory levels are healthy.</span>
+                    </div>
+                    `}
+                </div>
+            `;
+        }
+        
+        async function queryAIAndDisplay(query) {
+            const responseDiv = document.getElementById('ai-response');
+            responseDiv.style.display = 'block';
+            responseDiv.innerHTML = '<div class="loading">Querying AI...</div>';
+            
+            try {
+                const result = await queryAI(query);
+                if (result.success) {
+                    // Format the response properly
+                    let formattedResponse = result.response;
+                    // Replace newlines with <br>
+                    formattedResponse = formattedResponse.replace(/\n/g, '<br>');
+                    // Preserve formatting
+                    formattedResponse = formattedResponse.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    formattedResponse = formattedResponse.replace(/\*(.*?)\*/g, '<em>$1</em>');
+                    
+                    responseDiv.innerHTML = `<div class="ai-response-content">${formattedResponse}</div>`;
+                } else {
+                    responseDiv.innerHTML = `<div class="error-message" style="display: block;">Error: ${result.message || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                console.error('AI Query Error:', error);
+                responseDiv.innerHTML = `<div class="error-message" style="display: block;">Connection error: ${error.message}</div>`;
+            }
+        }
+        
+        function logout() {
+            localStorage.clear();
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>
+
