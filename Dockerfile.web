@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt 
+
+# Generate app_pb2* from proto/app.proto into /app
+COPY proto/ ./proto/
+WORKDIR /app/proto
+RUN python -m grpc_tools.protoc -I. --python_out=.. --grpc_python_out=.. app.proto raft.proto llm.proto
+WORKDIR /app
+
+# Copy server and static files
+COPY web_server.py .
+COPY web/ ./web/
+
+# Expose port
+EXPOSE 5000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD python -c "import requests; requests.get('http://localhost:5000/health', timeout=2)" || exit 1
+
+# Run web server
+CMD ["python", "web_server.py"]

@@ -3,6 +3,7 @@ import raft_pb2
 import raft_pb2_grpc
 import time
 import uuid
+import os
 from datetime import datetime
 
 class RaftClient:
@@ -45,7 +46,7 @@ class RaftClient:
                 channel.close()
                 
             except grpc.RpcError as e:
-                print(f" {server_addr}: {e.code()}")
+                print(f"Error from {server_addr}: {e.code()}")
                 continue
             except Exception as e:
                 continue
@@ -181,15 +182,14 @@ class RaftClient:
         return False
     
     def view_inventory(self):
-        """View current inventory from any server"""
-        for server_addr in self.servers:
+        """View current inventory with retry logic"""
+        for attempt in range(self.max_retries):
             try:
-                channel = grpc.insecure_channel(server_addr)
-                stub = raft_pb2_grpc.RaftServiceStub(channel)
+                stub, channel = self._get_stub()
                 
                 response = stub.GetInventory(
                     raft_pb2.GetInventoryRequest(),
-                    timeout=2.0
+                    timeout=self.request_timeout
                 )
                 
                 channel.close()
@@ -205,10 +205,28 @@ class RaftClient:
                 print("="*40 + "\n")
                 return True
                 
-            except Exception:
-                continue
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                    if self._find_leader():
+                        continue
+                    else:
+                        print("Could not find leader")
+                        return False
+                elif e.code() == grpc.StatusCode.UNAVAILABLE:
+                    print(f"Leader unavailable on attempt {attempt + 1}")
+                    if attempt < self.max_retries - 1:
+                        print(f"Retrying (attempt {attempt + 2}/{self.max_retries})...")
+                        self._find_leader()
+                        time.sleep(0.5)
+                else:
+                    print(f"Error: {e.details()}")
+                    return False
+            except Exception as e:
+                print(f"Error: {type(e).__name__}: {e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(1)
         
-        print("Could not retrieve inventory from any server")
+        print("Failed to get inventory after multiple attempts")
         return False
     
     def query_llm(self, query):
@@ -217,38 +235,36 @@ class RaftClient:
 
         for attempt in range(1, self.max_retries + 1):
             try:
-                # Always ensure we’re talking to the leader
+                # Always ensure we're talking to the leader
                 if not self.current_leader or attempt > 1:
                     print(f"Finding leader (attempt {attempt})...")
                     self._find_leader()
-
+                
                 if not self.current_leader:
                     print("No leader found — cannot query LLM.")
                     continue
-
+                
                 channel = grpc.insecure_channel(self.current_leader)
                 stub = raft_pb2_grpc.RaftServiceStub(channel)
-
-                # ✅ Send query only to leader
+                
                 response = stub.QueryLLM(
                     raft_pb2.QueryLLMRequest(
                         query=query,
                         username=self.username,
-                        request_id=request_id   # ✅ Add unique ID here
+                        request_id=request_id
                     ),
                     timeout=60.0
                 )
-
+                
                 channel.close()
-
+                
                 if response.success:
-                    print("\n" + "=" * 50)
+                    print("\n" + "="*50)
                     print("🤖 AI Response (from leader):")
-                    print("=" * 50)
+                    print("="*50)
                     print(response.response)
-                    print("=" * 50 + "\n")
+                    print("="*50 + "\n")
                     return True
-
                 else:
                     # If leader redirects
                     if "not leader" in response.error.lower() or "redirect" in response.error.lower():
@@ -259,39 +275,43 @@ class RaftClient:
                         print("Leader not found in response — rediscovering.")
                         self._find_leader()
                         continue
-
-                print(f"Query failed: {response.error}")
-                return False
-
+                    
+                    print(f"Query failed: {response.error}")
+                    return False
+                
             except grpc.RpcError as e:
                 print(f"[gRPC] Error while querying LLM: {e.code()}")
                 self.current_leader = None  # Force re-discovery
                 if attempt < self.max_retries:
                     time.sleep(1)
                     continue
-
+            
             except Exception as e:
                 print(f"Error: {type(e).__name__}: {e}")
                 if attempt < self.max_retries:
                     time.sleep(1)
-
+        
         print("❌ Could not reach leader for query after multiple attempts.")
         return False
 
+
 def main():
-    import os
-    
     # Get credentials
     username = input("Username: ").strip() or "admin"
     password = input("Password: ").strip() or "admin123"
     
     print(f"\nStarting client as: {username}\n")
     
-    initial_servers = [
-        "127.0.0.1:50051",
-        "127.0.0.1:50052",
-        "127.0.0.1:50053"
-    ]
+    # Get servers from environment or use defaults
+    servers_env = os.getenv("RAFT_SERVERS", "")
+    if servers_env:
+        initial_servers = [s.strip() for s in servers_env.split(",")]
+    else:
+        initial_servers = [
+            "127.0.0.1:50051",
+            "127.0.0.1:50052",
+            "127.0.0.1:50053"
+        ]
     
     client = RaftClient(initial_servers, username, password)
     

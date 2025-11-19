@@ -34,6 +34,11 @@ class AppServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.signup = channel.unary_unary(
+                '/app.AppService/signup',
+                request_serializer=app__pb2.SignupRequest.SerializeToString,
+                response_deserializer=app__pb2.SignupResponse.FromString,
+                _registered_method=True)
         self.login = channel.unary_unary(
                 '/app.AppService/login',
                 request_serializer=app__pb2.LoginRequest.SerializeToString,
@@ -49,10 +54,21 @@ class AppServiceStub(object):
                 request_serializer=app__pb2.GetRequest.SerializeToString,
                 response_deserializer=app__pb2.GetResponse.FromString,
                 _registered_method=True)
+        self.query = channel.unary_unary(
+                '/app.AppService/query',
+                request_serializer=app__pb2.QueryRequest.SerializeToString,
+                response_deserializer=app__pb2.QueryResponse.FromString,
+                _registered_method=True)
 
 
 class AppServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
+
+    def signup(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
     def login(self, request, context):
         """Missing associated documentation comment in .proto file."""
@@ -72,9 +88,20 @@ class AppServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def query(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_AppServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'signup': grpc.unary_unary_rpc_method_handler(
+                    servicer.signup,
+                    request_deserializer=app__pb2.SignupRequest.FromString,
+                    response_serializer=app__pb2.SignupResponse.SerializeToString,
+            ),
             'login': grpc.unary_unary_rpc_method_handler(
                     servicer.login,
                     request_deserializer=app__pb2.LoginRequest.FromString,
@@ -90,6 +117,11 @@ def add_AppServiceServicer_to_server(servicer, server):
                     request_deserializer=app__pb2.GetRequest.FromString,
                     response_serializer=app__pb2.GetResponse.SerializeToString,
             ),
+            'query': grpc.unary_unary_rpc_method_handler(
+                    servicer.query,
+                    request_deserializer=app__pb2.QueryRequest.FromString,
+                    response_serializer=app__pb2.QueryResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'app.AppService', rpc_method_handlers)
@@ -100,6 +132,33 @@ def add_AppServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class AppService(object):
     """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def signup(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/app.AppService/signup',
+            app__pb2.SignupRequest.SerializeToString,
+            app__pb2.SignupResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def login(request,
@@ -172,6 +231,33 @@ class AppService(object):
             '/app.AppService/get',
             app__pb2.GetRequest.SerializeToString,
             app__pb2.GetResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def query(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/app.AppService/query',
+            app__pb2.QueryRequest.SerializeToString,
+            app__pb2.QueryResponse.FromString,
             options,
             channel_credentials,
             insecure,

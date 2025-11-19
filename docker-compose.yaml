@@ -1,0 +1,199 @@
+services:
+  # =====================================
+  # Web Server - Frontend UI
+  # =====================================
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: web-server
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Connect to all nodes (web server will find the leader)
+      - RAFT_NODES=raft-node1:50051,raft-node2:50052,raft-node3:50053
+    ports:
+      - "5000:5000"  # Access at http://localhost:5000
+    networks:
+      - raft-network
+    depends_on:
+      - raft-node1
+      - raft-node2
+      - raft-node3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =====================================
+  # LLM Server - AI Query Service
+  # =====================================
+  llm:
+    build:
+      context: .
+      dockerfile: Dockerfile.llm
+    container_name: llm-server
+    environment:
+      - PYTHONUNBUFFERED=1
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MIN_INTERVAL=5.0  # seconds between requests
+    ports:
+      - "50054:50054"
+    volumes:
+      - llm-logs:/app/llm_data
+    networks:
+      - raft-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50054'); grpc.channel_ready_future(channel).result(timeout=1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =====================================
+  # Raft Node 1 (can become leader/follower)
+  # =====================================
+  raft-node1:
+    build:
+      context: .
+      dockerfile: Dockerfile.raft
+    container_name: raft-node1
+    environment:
+      - NODE_ID=node1
+      - NODE_PORT=50051
+      - PEERS=raft-node2:50052,raft-node3:50053
+      - LLM_SERVER=llm-server:50054
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "50051:50051"
+    volumes:
+      - node1-data:/app/server_data
+    working_dir: /app
+    networks:
+      - raft-network
+    # depends_on:
+    #   llm:
+    #     condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50051'); grpc.channel_ready_future(channel).result(timeout=1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =====================================
+  # Raft Node 2 (can become leader/follower)
+  # =====================================
+  raft-node2:
+    build:
+      context: .
+      dockerfile: Dockerfile.raft
+    container_name: raft-node2
+    environment:
+      - NODE_ID=node2
+      - NODE_PORT=50052
+      - PEERS=raft-node1:50051,raft-node3:50053
+      - LLM_SERVER=llm-server:50054
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "50052:50052"
+    volumes:
+      - node2-data:/app/server_data
+    working_dir: /app
+    networks:
+      - raft-network
+    # depends_on:
+    #   llm:
+    #     condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =====================================
+  # Raft Node 3 (can become leader/follower)
+  # =====================================
+  raft-node3:
+    build:
+      context: .
+      dockerfile: Dockerfile.raft
+    container_name: raft-node3
+    environment:
+      - NODE_ID=node3
+      - NODE_PORT=50053
+      - PEERS=raft-node1:50051,raft-node2:50052
+      - LLM_SERVER=llm-server:50054
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "50053:50053"
+    volumes:
+      - node3-data:/app/server_data
+    working_dir: /app
+    networks:
+      - raft-network
+    # depends_on:
+    #   llm:
+    #     condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =====================================
+  # CLI Client (Optional - for testing)
+  # =====================================
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: raft-client
+    environment:
+      - RAFT_SERVERS=raft-node1:50051,raft-node2:50052,raft-node3:50053
+    networks:
+      - raft-network
+    depends_on:
+      - raft-node1
+      - raft-node2
+      - raft-node3
+    stdin_open: true
+    tty: true
+    profiles:
+      - client  # Only start: `docker-compose --profile client up`
+    working_dir: /app
+
+# =====================================
+# Networks
+# =====================================
+networks:
+  raft-network:
+    driver: bridge
+
+# =====================================
+# Persistent Volumes
+# =====================================
+volumes:
+  llm-logs:
+    driver: local
+  node1-data:
+    driver: local
+  node2-data:
+    driver: local
+  node3-data:
+    driver: local

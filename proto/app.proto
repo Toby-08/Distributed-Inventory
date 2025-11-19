@@ -3,9 +3,24 @@ syntax = "proto3";
 package app;
 
 service AppService {
+  rpc signup(SignupRequest) returns (SignupResponse);
   rpc login(LoginRequest) returns (LoginResponse);
   rpc post(PostRequest) returns (PostResponse);
   rpc get(GetRequest) returns (GetResponse);
+  rpc query(QueryRequest) returns (QueryResponse);
+}
+
+// Authentication messages
+message SignupRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message SignupResponse {
+  string status = 1;
+  string message = 2;
+  string token = 3;
+  string leader_address = 99;
 }
 
 message LoginRequest {
@@ -16,19 +31,22 @@ message LoginRequest {
 message LoginResponse {
   string status = 1;
   string token = 2;
+  string message = 3;
+  string leader_address = 99;
 }
 
+// Inventory operations
 message PostRequest {
   string token = 1;
-  string type = 2;
-  string data = 3;
-  string requestId = 4; 
+  string operation = 2;
+  string product = 3;
+  int32 quantity = 4;
 }
 
 message PostResponse {
   string status = 1;
-  string result = 2;
-  string requestId = 3; 
+  string message = 2;
+  string leader_address = 99;
 }
 
 message GetRequest {
@@ -39,5 +57,24 @@ message GetRequest {
 
 message GetResponse {
   string status = 1;
-  repeated string items = 2;
+  repeated InventoryItem inventory = 2;
+  string message = 3;
+  string leader_address = 99;
+}
+
+message InventoryItem {
+  string product = 1;
+  int32 quantity = 2;
+}
+
+// AI Query
+message QueryRequest {
+  string token = 1;
+  string query = 2;
+}
+
+message QueryResponse {
+  string status = 1;
+  string answer = 2;
+  string leader_address = 99;
 }

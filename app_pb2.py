@@ -24,25 +24,35 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tapp.proto\x12\x03\x61pp\"2\n\x0cLoginRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\".\n\rLoginResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\r\n\x05token\x18\x02 \x01(\t\"K\n\x0bPostRequest\x12\r\n\x05token\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\t\x12\x11\n\trequestId\x18\x04 \x01(\t\"A\n\x0cPostResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0e\n\x06result\x18\x02 \x01(\t\x12\x11\n\trequestId\x18\x03 \x01(\t\"9\n\nGetRequest\x12\r\n\x05token\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0e\n\x06params\x18\x03 \x01(\t\",\n\x0bGetResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\r\n\x05items\x18\x02 \x03(\t2\x93\x01\n\nAppService\x12.\n\x05login\x12\x11.app.LoginRequest\x1a\x12.app.LoginResponse\x12+\n\x04post\x12\x10.app.PostRequest\x1a\x11.app.PostResponse\x12(\n\x03get\x12\x0f.app.GetRequest\x1a\x10.app.GetResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tapp.proto\x12\x03\x61pp\"3\n\rSignupRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\"X\n\x0eSignupResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\r\n\x05token\x18\x03 \x01(\t\x12\x16\n\x0eleader_address\x18\x63 \x01(\t\"2\n\x0cLoginRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\"W\n\rLoginResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\r\n\x05token\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\x12\x16\n\x0eleader_address\x18\x63 \x01(\t\"R\n\x0bPostRequest\x12\r\n\x05token\x18\x01 \x01(\t\x12\x11\n\toperation\x18\x02 \x01(\t\x12\x0f\n\x07product\x18\x03 \x01(\t\x12\x10\n\x08quantity\x18\x04 \x01(\x05\"j\n\x0cPostResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0e\n\x06result\x18\x02 \x01(\t\x12\x11\n\trequestId\x18\x03 \x01(\t\x12\x0f\n\x07message\x18\x04 \x01(\t\x12\x16\n\x0eleader_address\x18\x63 \x01(\t\"9\n\nGetRequest\x12\r\n\x05token\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0e\n\x06params\x18\x03 \x01(\t\"m\n\x0bGetResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12%\n\tinventory\x18\x02 \x03(\x0b\x32\x12.app.InventoryItem\x12\x0f\n\x07message\x18\x03 \x01(\t\x12\x16\n\x0eleader_address\x18\x63 \x01(\t\"2\n\rInventoryItem\x12\x0f\n\x07product\x18\x01 \x01(\t\x12\x10\n\x08quantity\x18\x02 \x01(\x05\",\n\x0cQueryRequest\x12\r\n\x05token\x18\x01 \x01(\t\x12\r\n\x05query\x18\x02 \x01(\t\"G\n\rQueryResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x0e\n\x06\x61nswer\x18\x02 \x01(\t\x12\x16\n\x0eleader_address\x18\x63 \x01(\t2\xf6\x01\n\nAppService\x12\x31\n\x06signup\x12\x12.app.SignupRequest\x1a\x13.app.SignupResponse\x12.\n\x05login\x12\x11.app.LoginRequest\x1a\x12.app.LoginResponse\x12+\n\x04post\x12\x10.app.PostRequest\x1a\x11.app.PostResponse\x12(\n\x03get\x12\x0f.app.GetRequest\x1a\x10.app.GetResponse\x12.\n\x05query\x12\x11.app.QueryRequest\x1a\x12.app.QueryResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'app_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_LOGINREQUEST']._serialized_start=18
-  _globals['_LOGINREQUEST']._serialized_end=68
-  _globals['_LOGINRESPONSE']._serialized_start=70
-  _globals['_LOGINRESPONSE']._serialized_end=116
-  _globals['_POSTREQUEST']._serialized_start=118
-  _globals['_POSTREQUEST']._serialized_end=193
-  _globals['_POSTRESPONSE']._serialized_start=195
-  _globals['_POSTRESPONSE']._serialized_end=260
-  _globals['_GETREQUEST']._serialized_start=262
-  _globals['_GETREQUEST']._serialized_end=319
-  _globals['_GETRESPONSE']._serialized_start=321
-  _globals['_GETRESPONSE']._serialized_end=365
-  _globals['_APPSERVICE']._serialized_start=368
-  _globals['_APPSERVICE']._serialized_end=515
+  _globals['_SIGNUPREQUEST']._serialized_start=18
+  _globals['_SIGNUPREQUEST']._serialized_end=69
+  _globals['_SIGNUPRESPONSE']._serialized_start=71
+  _globals['_SIGNUPRESPONSE']._serialized_end=159
+  _globals['_LOGINREQUEST']._serialized_start=161
+  _globals['_LOGINREQUEST']._serialized_end=211
+  _globals['_LOGINRESPONSE']._serialized_start=213
+  _globals['_LOGINRESPONSE']._serialized_end=300
+  _globals['_POSTREQUEST']._serialized_start=302
+  _globals['_POSTREQUEST']._serialized_end=384
+  _globals['_POSTRESPONSE']._serialized_start=386
+  _globals['_POSTRESPONSE']._serialized_end=492
+  _globals['_GETREQUEST']._serialized_start=494
+  _globals['_GETREQUEST']._serialized_end=551
+  _globals['_GETRESPONSE']._serialized_start=553
+  _globals['_GETRESPONSE']._serialized_end=662
+  _globals['_INVENTORYITEM']._serialized_start=664
+  _globals['_INVENTORYITEM']._serialized_end=714
+  _globals['_QUERYREQUEST']._serialized_start=716
+  _globals['_QUERYREQUEST']._serialized_end=760
+  _globals['_QUERYRESPONSE']._serialized_start=762
+  _globals['_QUERYRESPONSE']._serialized_end=833
+  _globals['_APPSERVICE']._serialized_start=836
+  _globals['_APPSERVICE']._serialized_end=1082
 # @@protoc_insertion_point(module_scope)

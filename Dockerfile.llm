@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY proto/ ./proto/
+WORKDIR /app/proto
+RUN python -m grpc_tools.protoc -I. --python_out=.. --grpc_python_out=.. llm.proto
+WORKDIR /app
+
+COPY llm_server/ ./llm_server/
+
+# Create data directory for logs (NOT llm_server!)
+RUN mkdir -p /app/llm_data
+
+EXPOSE 50054
+CMD ["python", "-m", "llm_server.llm_server"]

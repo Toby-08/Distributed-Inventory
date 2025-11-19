@@ -4,6 +4,7 @@ import threading
 import time
 import random
 import grpc
+import traceback
 from enum import Enum
 from datetime import datetime, timezone
 from typing import Optional, Dict, List
@@ -14,10 +15,12 @@ import llm_pb2
 import llm_pb2_grpc
 
 
+
 class NodeState(Enum):
     FOLLOWER = 1
     CANDIDATE = 2
     LEADER = 3
+
 
 class RaftNode:
     def __init__(self, node_id: str, peers: list, port: int, llm_server_address: str = "127.0.0.1:50054"):
@@ -38,6 +41,7 @@ class RaftNode:
         print(f"[{self.node_id}] Data directory: {self.data_dir}")
         print(f"[{self.node_id}] Log path: {self.log_path}")
         
+        # Core Raft state
         self.log = []
         self.inventory = {}
         self.current_term = 0
@@ -55,7 +59,7 @@ class RaftNode:
         if self.inventory:
             print(f"[{self.node_id}] Current inventory: {self.inventory}")
         
-        # Missing inits
+        # Threading and state management
         self.state_lock = threading.RLock()
         self.request_cache_lock = threading.Lock()
         self.completed_requests: Dict[str, dict] = {}
@@ -76,6 +80,10 @@ class RaftNode:
         self.peer_last_seen: Dict[str, float] = {p: time.time() for p in self.peers}
         self.next_index: Dict[str, int] = {p: len(self.log) + 1 for p in self.peers}
         self.match_index: Dict[str, int] = {p: 0 for p in self.peers}
+        
+        # Conflict tracking for binary search optimization
+        self._conflict_count: Dict[str, int] = {}
+        self._heartbeat_errors: Dict[str, int] = {}
 
         # LLM tracking
         self.llm_server_address = llm_server_address
@@ -86,7 +94,9 @@ class RaftNode:
         self.last_llm_synced_term = 0
         self.last_llm_synced_index = 0
 
+        # Election state
         self.failed_elections = 0
+        self._heartbeat_send_count = 0
     
     def _random_election_timeout(self) -> float:
         """Random election timeout with backoff on failures"""
@@ -137,16 +147,14 @@ class RaftNode:
                     line = line.strip()
                     if not line:
                         continue
+                    
                     try:
                         entry = json.loads(line)
-                     
-                        if "term" in entry and "index" in entry:
-                            self.log.append(entry)
-                            # Reconstruct inventory by applying
-                            self._apply_loaded(entry)
-                            loaded_count += 1
+                        self.log.append(entry)
+                        self._apply_loaded(entry)
+                        loaded_count += 1
                     except json.JSONDecodeError as e:
-                        print(f"[{self.node_id}] Skipping malformed log line: {e}")
+                        print(f"[{self.node_id}] Skipping invalid log line: {e}")
                         continue
             
             # Rebuild commit pointers
@@ -157,7 +165,6 @@ class RaftNode:
             
         except Exception as e:
             print(f"[{self.node_id}] Failed to load log: {e}")
-            import traceback
             traceback.print_exc()
 
     def _apply_loaded(self, entry: dict):
@@ -207,17 +214,32 @@ class RaftNode:
     
     def _can_reach_quorum(self, timeout: float = 0.2) -> bool:
         """Quick connectivity probe to avoid elections from a minority partition."""
+        # Allow single-node operation (no peers = single node cluster)
+        if not self.peers or len(self.peers) == 0:
+            return True
         majority = self._calculate_majority()
         reachable = 1  # self
         for peer in self.peers:
-            try:
-                ch = grpc.insecure_channel(peer)
-                grpc.channel_ready_future(ch).result(timeout=timeout)
-                ch.close()
+            if self._peer_supports_raft(peer, timeout=timeout):
                 reachable += 1
-            except Exception:
-                pass
         return reachable >= majority
+
+    def _peer_supports_raft(self, peer: str, timeout: float = 0.3) -> bool:
+        """Return True if peer responds to a RaftService RPC (GetLeaderInfo)."""
+        try:
+            channel = grpc.insecure_channel(peer)
+            stub = raft_pb2_grpc.RaftServiceStub(channel)
+            stub.GetLeaderInfo(raft_pb2.GetLeaderRequest(), timeout=timeout)
+            channel.close()
+            return True
+        except grpc.RpcError:
+            try:
+                channel.close()
+            except:
+                pass
+            return False
+        except Exception:
+            return False
 
     def _health_check_loop(self):
         """Background thread to check peer health"""
@@ -225,20 +247,16 @@ class RaftNode:
             time.sleep(self.health_check_interval)
             
             for peer in self.peers:
-                try:
-                    channel = grpc.insecure_channel(peer)
-                    # Quick connectivity check
-                    grpc.channel_ready_future(channel).result(timeout=0.2)
+                if self._peer_supports_raft(peer, timeout=0.4):
                     self._mark_peer_alive(peer)
-                    channel.close()
-                except:
-                    # Check if peer has been unreachable for too long
+                else:
                     with self.state_lock:
                         last_seen = self.peer_last_seen.get(peer, time.time())
                         if time.time() - last_seen > self.dead_peer_threshold:
                             self._mark_peer_dead(peer)
     
     def _become_leader(self):
+        """Transition to leader state"""
         print(f"[{self.node_id}] *** Became LEADER for term {self.current_term}")
         self.state = NodeState.LEADER
         self.failed_elections = 0  # Reset failed election counter
@@ -264,7 +282,7 @@ class RaftNode:
         self._send_heartbeats()
 
     def _bulk_sync_llm_if_needed(self):
-        """Leader-only bulk sync with dedupe."""
+        """Leader-only bulk sync with deduplication"""
         with self.state_lock:
             if self.state != NodeState.LEADER:
                 print(f"[{self.node_id}] Not leader, skipping sync")
@@ -281,74 +299,48 @@ class RaftNode:
             with self.state_lock:
                 self.last_llm_synced_term = self.current_term
                 self.last_llm_synced_index = len(self.log)
-        
-        print(f"[{self.node_id}] LLM re-sync completed at index {self.last_llm_synced_index}")
+                print(f"[{self.node_id}] LLM re-sync completed at index {self.last_llm_synced_index}")
 
-    def _sync_logs_to_llm(self) -> bool:
-        """Bulk sync all logs to LLM server. Returns True if successful."""
-        print(f"[{self.node_id}] _sync_logs_to_llm called with {len(self.log)} logs")
-        
+    def _sync_logs_to_llm(self):
+        """Send inventory logs to LLM server for analytics"""
         try:
-            print(f"[{self.node_id}] Connecting to LLM at {self.llm_server_address}...")
-            
-            channel = grpc.insecure_channel(
-                self.llm_server_address,
-                options=[('grpc.enable_retries', 0)]
-            )
-            
-            # Test connection first
-            try:
-                grpc.channel_ready_future(channel).result(timeout=2.0)
-                print(f"[{self.node_id}] LLM connection established")
-            except grpc.FutureTimeoutError:
-                print(f"[{self.node_id}] LLM server unreachable (timeout)")
-                channel.close()
-                return False
-            
+            channel = grpc.insecure_channel(self.llm_server_address)
             stub = llm_pb2_grpc.LLMServiceStub(channel)
             
-            # Convert logs to protobuf format
             log_entries = []
-            for entry in self.log:
-                log_entries.append(llm_pb2.LogEntry(
-                    term=entry['term'],
-                    index=entry['index'],
-                    operation=entry['operation'],
-                    product=entry['product'],
-                    qty_change=entry.get('qty_change', 0),
-                    new_qty=entry.get('new_qty', 0),
-                    username=entry.get('username', ''),
-                    timestamp=entry.get('timestamp', ''),
-                    request_id=entry.get('request_id', '')
-                ))
+            with self.state_lock:
+                logs_to_sync = list(self.log)  # Copy all logs
             
-            print(f"[{self.node_id}] Sending {len(log_entries)} logs to LLM...")
-            
-            # Call SyncLogs RPC
-            response = stub.SyncLogs(llm_pb2.SyncLogsRequest(
-                leader_id=self.node_id,
-                term=self.current_term,
-                logs=log_entries
-            ), timeout=15.0)
+            for entry in logs_to_sync:
+                log_entries.append(
+                    llm_pb2.LogEntry(
+                        term=entry.get('term', 0),
+                        index=entry.get('index', 0),
+                        operation=entry.get('operation', ''),
+                        product=entry.get('product', ''),
+                        qty_change=entry.get('qty_change', 0),
+                        new_qty=entry.get('new_qty', 0),
+                        username=entry.get('username', ''),
+                        timestamp=entry.get('timestamp', ''),
+                        request_id=entry.get('request_id', '')
+                    )
+                )
+
+            response = stub.SyncLogs(
+                llm_pb2.SyncLogsRequest(logs=log_entries, leader_id=self.node_id),
+                timeout=10.0
+            )
             
             channel.close()
             
             if response.success:
-                print(f"[{self.node_id}] LLM acknowledged {response.logs_synced} logs: {response.message}")
-                return True
+                print(f"[RAFT] Synced {len(log_entries)} logs to LLM")
             else:
-                print(f"[{self.node_id}] LLM sync failed: {response.message}")
-                return False
+                print(f"[RAFT] LLM sync failed: {response.message}")
+            return response.success
                 
-        except grpc.RpcError as e:
-            print(f"[{self.node_id}] LLM RPC error: {e.code()} - {e.details()}")
-            import traceback
-            traceback.print_exc()
-            return False
         except Exception as e:
-            print(f"[{self.node_id}] LLM sync exception: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[RAFT] LLM sync error: {e}")
             return False
 
     def _resync_llm_on_recovery(self):
@@ -369,7 +361,6 @@ class RaftNode:
 
     def _send_log_to_llm(self, entry: dict):
         """Send a single log entry to LLM (for real-time append)"""
-        # Leader-only lightweight append
         if self.state != NodeState.LEADER or not self.llm_available:
             return
         
@@ -378,11 +369,12 @@ class RaftNode:
             grpc.channel_ready_future(channel).result(timeout=0.5)
             stub = llm_pb2_grpc.LLMServiceStub(channel)
             
+            # FIXED: Match the correct proto fields
             log_entry = llm_pb2.LogEntry(
-                term=entry['term'],
-                index=entry['index'],
-                operation=entry['operation'],
-                product=entry['product'],
+                term=entry.get('term', 0),
+                index=entry.get('index', 0),
+                operation=entry.get('operation', ''),
+                product=entry.get('product', ''),
                 qty_change=entry.get('qty_change', 0),
                 new_qty=entry.get('new_qty', 0),
                 username=entry.get('username', ''),
@@ -390,18 +382,18 @@ class RaftNode:
                 request_id=entry.get('request_id', '')
             )
             
-            stub.AppendLog(llm_pb2.AppendLogRequest(
-                log=log_entry,
-                leader_id=self.node_id
-            ), timeout=3.0)
+            stub.AppendLog(
+                llm_pb2.AppendLogRequest(log=log_entry, leader_id=self.node_id),
+                timeout=3.0
+            )
             
             channel.close()
             print(f"[{self.node_id}] LLM received log {entry['index']}")
             
-        except Exception:
-            # Silent failure; health checker will adjust availability
+        except Exception as e:
+            print(f"[{self.node_id}] LLM send failed: {e}")
             self.llm_available = False
-    
+
     def start(self):
         """Start Raft consensus threads"""
         self.running = True
@@ -422,7 +414,54 @@ class RaftNode:
         self.llm_health_thread = threading.Thread(target=self._llm_health_monitor, daemon=True)
         self.llm_health_thread.start()
         
+        # Apply committed entries loop
+        self.apply_thread = threading.Thread(target=self._apply_committed_entries_loop, daemon=True)
+        self.apply_thread.start()
+        
         print(f"[{self.node_id}] Raft consensus engine started")
+
+    def _apply_committed_entries_loop(self):
+        """Background thread that applies committed log entries to state machine"""
+        while self.running:
+            time.sleep(0.05)  # Check every 50ms
+            
+            with self.state_lock:
+                # Apply all committed but not yet applied entries
+                while self.last_applied < self.commit_index:
+                    self.last_applied += 1
+                    
+                    if self.last_applied > len(self.log):
+                        print(f"[{self.node_id}] ERROR: last_applied={self.last_applied} > log length={len(self.log)}")
+                        self.last_applied = len(self.log)
+                        break
+                    
+                    entry = self.log[self.last_applied - 1]
+                    self._apply_to_state_machine(entry)
+
+    def _apply_to_state_machine(self, entry: dict):
+        """Apply a committed log entry to the inventory state machine"""
+        operation = entry.get("operation")
+        product = entry.get("product")
+        
+        if operation == "add_inventory":
+            old_qty = self.inventory.get(product, 0)
+            qty_change = entry.get("qty_change", 0)
+            new_qty = old_qty + qty_change
+            self.inventory[product] = new_qty
+            print(f"[{self.node_id}] Applied log {entry['index']}: {product} {old_qty} → {new_qty} (+{qty_change})")
+            
+        elif operation == "update_inventory":
+            old_qty = self.inventory.get(product, 0)
+            new_qty = entry.get("new_qty", 0)
+            self.inventory[product] = new_qty
+            print(f"[{self.node_id}] Applied log {entry['index']}: {product} {old_qty} → {new_qty}")
+        
+        else:
+            print(f"[{self.node_id}] Unknown operation in log {entry['index']}: {operation}")
+        
+        # Send to LLM if leader and LLM is available
+        if self.state == NodeState.LEADER and self.llm_available:
+            threading.Thread(target=self._send_log_to_llm, args=(entry,), daemon=True).start()
 
     def _election_timer(self):
         """Election timeout loop"""
@@ -433,17 +472,16 @@ class RaftNode:
                 if self.state != NodeState.LEADER:
                     elapsed = time.time() - self.last_heartbeat
                     if elapsed > self.election_timeout:
-                        # Only proceed if we can likely reach quorum
-                        if not self._can_reach_quorum(timeout=0.25):
-                            # Backoff and try later; do NOT bump term
-                            self.failed_elections = min(self.failed_elections + 1, 10)
-                            backoff = self._random_election_timeout() * (1.5 + 0.5 * self.failed_elections)
-                            self.election_timeout = backoff
-                            self.last_heartbeat = time.time()
-                            print(f"[{self.node_id}] Skipping election (no quorum). Backing off {backoff:.2f}s")
-                        else:
-                            print(f"[{self.node_id}] Election timeout! Starting election...")
-                            start_election = True
+                            if self._can_reach_quorum(timeout=0.35):
+                                print(f"[{self.node_id}] Election timeout! Starting election...")
+                                start_election = True
+                            else:
+                            # Backoff if no quorum
+                                self.failed_elections = min(self.failed_elections + 1, 10)
+                                backoff = self._random_election_timeout() * (1.2 + 0.3 * self.failed_elections)
+                                self.election_timeout = backoff
+                                self.last_heartbeat = time.time()
+                                print(f"[{self.node_id}] Skipping election (quorum unreachable). Backoff {backoff:.2f}s")
             if start_election:
                 self._start_election()
 
@@ -471,6 +509,11 @@ class RaftNode:
             votes_received = 1  # Vote for self
             votes_needed = self._calculate_majority()
             
+            # Single-node cluster: become leader immediately
+            if not self.peers or len(self.peers) == 0:
+                self._become_leader()
+                return
+            
             print(f"[{self.node_id}] STARTING ELECTION for term {current_term}")
         
         # Collect votes from peers
@@ -479,8 +522,7 @@ class RaftNode:
         # Request votes from all peers in parallel
         for peer in self.peers:
             thread = threading.Thread(
-                target=lambda p: vote_results.append((p, self._request_vote_sync(p, current_term))),
-                args=(peer,),
+                target=lambda p=peer: vote_results.append((p, self._request_vote_sync(p, current_term))),
                 daemon=True
             )
             thread.start()
@@ -557,35 +599,6 @@ class RaftNode:
             print(f"[{self.node_id}] Error requesting vote from {peer}: {e}")
             return False
 
-    def _bulk_sync_llm_if_needed(self):
-        """Leader-only bulk sync with dedupe."""
-        with self.state_lock:
-            if self.state != NodeState.LEADER:
-                print(f"[{self.node_id}] Not leader, skipping sync")
-                return
-            current_index = len(self.log)
-            if (self.last_llm_synced_term, self.last_llm_synced_index) == (self.current_term, current_index):
-                print(f"[{self.node_id}] Already synced term={self.current_term} index={current_index}")
-                return
-        
-        # Proceed outside the lock
-        print(f"[{self.node_id}] LLM bulk sync: term={self.current_term} logs={current_index}")
-        ok = self._sync_logs_to_llm()
-        if ok:
-            with self.state_lock:
-                self.last_llm_synced_term = self.current_term
-                self.last_llm_synced_index = len(self.log)
-
-    def _resync_llm_on_recovery(self):
-        """Triggered when LLM becomes available."""
-        try:
-            # Re-check leadership before syncing
-            if self.state != NodeState.LEADER:
-                return
-            self._bulk_sync_llm_if_needed()
-        except Exception as e:
-            print(f"[{self.node_id}] LLM re-sync failed: {e}")
-
     def _check_llm_health_direct(self) -> bool:
         """Direct LLM health check without caching"""
         try:
@@ -630,6 +643,7 @@ class RaftNode:
     
     def append_log_entry(self, operation: str, product: str, qty_change: int, 
                          new_qty: int, username: str, request_id: str) -> bool:
+        """Append entry to Raft log (leader only)"""
         with self.state_lock:
             if self.state != NodeState.LEADER:
                 return False
@@ -670,11 +684,11 @@ class RaftNode:
         """Return address of current leader if known"""
         if self.state == NodeState.LEADER:
             # Return own address
-            return f"127.0.0.1:{self.port}"
+            hostname = os.getenv("HOSTNAME")
+            return f"{hostname}:{self.port}"
         
-        # Return voted_for or None
-        # In real implementation, track leader from AppendEntries
-        return None  # Could track last known leader here
+        # Return None (could track last known leader here)
+        return None
 
     def _revert_to_follower(self, new_term: int):
         """Step down to follower state"""
@@ -692,7 +706,7 @@ class RaftNode:
             print(f"[{self.node_id}] Stepped down to FOLLOWER (term {old_term} → {new_term})")
 
     def _heartbeat_timer(self):
-        """Periodically send heartbeats/log replication when leader."""
+        """Periodically send heartbeats/log replication when leader"""
         while self.running:
             time.sleep(self.heartbeat_interval)
             try:
@@ -761,7 +775,7 @@ class RaftNode:
                             request_id=entry.get('request_id', '')
                         ))
         
-        # Build request
+            # Build request
             request = raft_pb2.AppendEntriesRequest(
                 term=term,
                 leaderId=self.node_id,
@@ -774,7 +788,7 @@ class RaftNode:
             # Send RPC
             response = stub.AppendEntries(request, timeout=0.5)
             
-            # ✅ ADD THIS: Mark peer alive on successful RPC
+            # Mark peer alive on successful RPC
             self._mark_peer_alive(peer)
             
             # Handle response
@@ -798,6 +812,10 @@ class RaftNode:
                         
                         # Update commit index if majority replicated
                         self._update_commit_index()
+                        
+                        # Reset conflict counter on success
+                        if peer in self._conflict_count:
+                            self._conflict_count[peer] = 0
                 else:
                     # Log inconsistency detected
                     # Track consecutive failures for this peer
@@ -810,7 +828,6 @@ class RaftNode:
                     self._conflict_count[peer] += 1
                     
                     # Use binary search if we've had multiple consecutive conflicts
-                    # This indicates a large gap in logs
                     if self._conflict_count[peer] >= 3:
                         print(f"[{self.node_id}] Multiple conflicts with {peer}, using binary search")
                         
@@ -890,6 +907,17 @@ class RaftNode:
         """Update commit index based on majority replication"""
         with self.state_lock:
             if self.state != NodeState.LEADER:
+                return
+            
+            # Single-node cluster: commit immediately
+            if not self.peers or len(self.peers) == 0:
+                for n in range(self.commit_index + 1, len(self.log) + 1):
+                    if n > len(self.log):
+                        continue
+                    old_commit = self.commit_index
+                    self.commit_index = n
+                    if old_commit != n:
+                        print(f"[{self.node_id}] Committed log {n} (single-node cluster)")
                 return
             
             # Find highest index replicated on majority

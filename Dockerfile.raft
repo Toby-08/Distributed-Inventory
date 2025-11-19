@@ -1,0 +1,30 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy proto files and generate code
+COPY proto/ ./proto/
+WORKDIR /app/proto
+RUN python -m grpc_tools.protoc -I. --python_out=.. --grpc_python_out=.. app.proto raft.proto llm.proto
+WORKDIR /app
+# Copy application code
+COPY server_app_leader/ ./server_app_leader/
+
+# Create data directory
+RUN mkdir -p /app/server_data
+
+# Expose gRPC port (will be overridden by docker-compose)
+EXPOSE 50051
+
+# Environment variables (defaults, will be overridden)
+ENV NODE_ID=leader
+ENV NODE_PORT=50051
+ENV PEERS=""
+ENV LLM_SERVER=llm:50054
+
+# Run the Raft server
+CMD ["python", "-u", "-m", "server_app_leader.app_server_raft"]

@@ -3,3 +3,7 @@ grpcio-tools==1.69.0
 protobuf==5.29.5
 PyJWT==2.10.1
 google-generativeai==0.8.5
+Flask==3.0.0
+flask-cors==4.0.0
+requests==2.31.0
+python-dotenv==1.0.0

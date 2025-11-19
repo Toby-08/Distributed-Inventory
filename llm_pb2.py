@@ -24,27 +24,29 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tllm.proto\x12\x03llm\"O\n\x0fSyncLogsRequest\x12\x11\n\tleader_id\x18\x01 \x01(\t\x12\x0c\n\x04term\x18\x02 \x01(\x05\x12\x1b\n\x04logs\x18\x03 \x03(\x0b\x32\r.llm.LogEntry\"I\n\x10SyncLogsResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x13\n\x0blogs_synced\x18\x02 \x01(\x05\x12\x0f\n\x07message\x18\x03 \x01(\t\"\xa9\x01\n\x08LogEntry\x12\x0c\n\x04term\x18\x01 \x01(\x05\x12\r\n\x05index\x18\x02 \x01(\x05\x12\x11\n\toperation\x18\x03 \x01(\t\x12\x0f\n\x07product\x18\x04 \x01(\t\x12\x12\n\nqty_change\x18\x05 \x01(\x05\x12\x0f\n\x07new_qty\x18\x06 \x01(\x05\x12\x10\n\x08username\x18\x07 \x01(\t\x12\x11\n\ttimestamp\x18\x08 \x01(\t\x12\x12\n\nrequest_id\x18\t \x01(\t\"A\n\x10\x41ppendLogRequest\x12\x1a\n\x03log\x18\x01 \x01(\x0b\x32\r.llm.LogEntry\x12\x11\n\tleader_id\x18\x02 \x01(\t\"$\n\x11\x41ppendLogResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\"C\n\x0cQueryRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\x10\n\x08username\x18\x02 \x01(\t\x12\x12\n\nrequest_id\x18\x03 \x01(\t\"A\n\rQueryResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x10\n\x08response\x18\x02 \x01(\t\x12\r\n\x05\x65rror\x18\x03 \x01(\t2\xba\x01\n\nLLMService\x12\x37\n\x08SyncLogs\x12\x14.llm.SyncLogsRequest\x1a\x15.llm.SyncLogsResponse\x12:\n\tAppendLog\x12\x15.llm.AppendLogRequest\x1a\x16.llm.AppendLogResponse\x12\x37\n\x0eQueryInventory\x12\x11.llm.QueryRequest\x1a\x12.llm.QueryResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tllm.proto\x12\x03llm\"\xad\x01\n\x0cInventoryLog\x12\x0c\n\x04term\x18\x01 \x01(\x03\x12\r\n\x05index\x18\x02 \x01(\x03\x12\x11\n\toperation\x18\x03 \x01(\t\x12\x0f\n\x07product\x18\x04 \x01(\t\x12\x12\n\nqty_change\x18\x05 \x01(\x05\x12\x0f\n\x07new_qty\x18\x06 \x01(\x05\x12\x10\n\x08username\x18\x07 \x01(\t\x12\x11\n\ttimestamp\x18\x08 \x01(\t\x12\x12\n\nrequest_id\x18\t \x01(\t\"E\n\x0fSyncLogsRequest\x12\x11\n\tleader_id\x18\x01 \x01(\t\x12\x1f\n\x04logs\x18\x02 \x03(\x0b\x32\x11.llm.InventoryLog\"I\n\x10SyncLogsResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x13\n\x0blogs_synced\x18\x02 \x01(\x05\x12\x0f\n\x07message\x18\x03 \x01(\t\"\xa9\x01\n\x08LogEntry\x12\x0c\n\x04term\x18\x01 \x01(\x05\x12\r\n\x05index\x18\x02 \x01(\x05\x12\x11\n\toperation\x18\x03 \x01(\t\x12\x0f\n\x07product\x18\x04 \x01(\t\x12\x12\n\nqty_change\x18\x05 \x01(\x05\x12\x0f\n\x07new_qty\x18\x06 \x01(\x05\x12\x10\n\x08username\x18\x07 \x01(\t\x12\x11\n\ttimestamp\x18\x08 \x01(\t\x12\x12\n\nrequest_id\x18\t \x01(\t\"E\n\x10\x41ppendLogRequest\x12\x1e\n\x03log\x18\x01 \x01(\x0b\x32\x11.llm.InventoryLog\x12\x11\n\tleader_id\x18\x02 \x01(\t\"5\n\x11\x41ppendLogResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"C\n\x0cQueryRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\x10\n\x08username\x18\x02 \x01(\t\x12\x12\n\nrequest_id\x18\x03 \x01(\t\"R\n\rQueryResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x10\n\x08response\x18\x02 \x01(\t\x12\r\n\x05\x65rror\x18\x03 \x01(\t\x12\x0f\n\x07message\x18\x04 \x01(\t2\xba\x01\n\nLLMService\x12\x37\n\x08SyncLogs\x12\x14.llm.SyncLogsRequest\x1a\x15.llm.SyncLogsResponse\x12:\n\tAppendLog\x12\x15.llm.AppendLogRequest\x1a\x16.llm.AppendLogResponse\x12\x37\n\x0eQueryInventory\x12\x11.llm.QueryRequest\x1a\x12.llm.QueryResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'llm_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_SYNCLOGSREQUEST']._serialized_start=18
-  _globals['_SYNCLOGSREQUEST']._serialized_end=97
-  _globals['_SYNCLOGSRESPONSE']._serialized_start=99
-  _globals['_SYNCLOGSRESPONSE']._serialized_end=172
-  _globals['_LOGENTRY']._serialized_start=175
-  _globals['_LOGENTRY']._serialized_end=344
-  _globals['_APPENDLOGREQUEST']._serialized_start=346
-  _globals['_APPENDLOGREQUEST']._serialized_end=411
-  _globals['_APPENDLOGRESPONSE']._serialized_start=413
-  _globals['_APPENDLOGRESPONSE']._serialized_end=449
-  _globals['_QUERYREQUEST']._serialized_start=451
-  _globals['_QUERYREQUEST']._serialized_end=518
-  _globals['_QUERYRESPONSE']._serialized_start=520
-  _globals['_QUERYRESPONSE']._serialized_end=585
-  _globals['_LLMSERVICE']._serialized_start=588
-  _globals['_LLMSERVICE']._serialized_end=774
+  _globals['_INVENTORYLOG']._serialized_start=19
+  _globals['_INVENTORYLOG']._serialized_end=192
+  _globals['_SYNCLOGSREQUEST']._serialized_start=194
+  _globals['_SYNCLOGSREQUEST']._serialized_end=263
+  _globals['_SYNCLOGSRESPONSE']._serialized_start=265
+  _globals['_SYNCLOGSRESPONSE']._serialized_end=338
+  _globals['_LOGENTRY']._serialized_start=341
+  _globals['_LOGENTRY']._serialized_end=510
+  _globals['_APPENDLOGREQUEST']._serialized_start=512
+  _globals['_APPENDLOGREQUEST']._serialized_end=581
+  _globals['_APPENDLOGRESPONSE']._serialized_start=583
+  _globals['_APPENDLOGRESPONSE']._serialized_end=636
+  _globals['_QUERYREQUEST']._serialized_start=638
+  _globals['_QUERYREQUEST']._serialized_end=705
+  _globals['_QUERYRESPONSE']._serialized_start=707
+  _globals['_QUERYRESPONSE']._serialized_end=789
+  _globals['_LLMSERVICE']._serialized_start=792
+  _globals['_LLMSERVICE']._serialized_end=978
 # @@protoc_insertion_point(module_scope)
