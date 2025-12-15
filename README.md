@@ -1,6 +1,6 @@
-# 🏬 Distributed Inventory Management System
+# Distributed Inventory Management System
 
-## 🔧 Environment Setup (for all members)
+## Environment Setup (for all members)
 
 ### Clone the repo
 ```Git bash
@@ -11,7 +11,7 @@ source venv/Scripts/activate
 pip install -r requirements.txt
 ```
 
-## 🚀 Current Features
+##  Current Features
 
 - Leader-based gRPC services
   - App Server (port 50051) for inventory and auth
@@ -43,7 +43,7 @@ pip install -r requirements.txt
 - Git hygiene
   - .gitignore excludes logs (*.jsonl), __pycache__, venv
 
-## ▶️ Run
+## Run
 
 - Terminal 1:
   - python -m llm_server.llm_server
@@ -54,20 +54,9 @@ pip install -r requirements.txt
   
 ---
 
-## 📸 Working Screenshot
+## Working Screenshot
 
 View screenshots:
 - https://drive.google.com/drive/folders/1qAN__CROhQ8pYbRRgvokdfNHImSeI_H-?usp=sharing
 
----
 
-## 📌 Notes
-
-- Active branches:
-  - feature-grpc-auth
-  - feature-raft-logic
-  - feature-llm
-- Current sprint: Raft
-  - Route new updates to: feature-raft-logic
-
----
